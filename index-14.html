@@ -1,0 +1,1499 @@
+<!--
+================================================================================
+  JAMP INDUSTRIES  —  ZINC OXIDE (ZnO) RECOVERY PLANT
+  3D EQUIPMENT MODEL + TOP VIEW PLOT PLAN
+--------------------------------------------------------------------------------
+  DRAWING SCALE      : 1 world unit = 0.1 m  (all equipment modelled to size)
+  PLOT SIZE          : 77.0 m (E-W)  x  57.0 m (N-S)
+  BASIS OF DRAWING   : Process flow sheet (jampindustriesflowchart.pdf)
+                       + hand marked block flow diagram (site sketch)
+  PROCESS ROUTE      : Zinc ash -> HCl leaching -> filtration -> purification
+                       -> alkali precipitation -> filtration -> drying (200-300 C)
+                       -> milling -> packing (ZnO 500 kg/batch)
+                       Spent brine -> RO -> permeate recycled to T-01
+--------------------------------------------------------------------------------
+  CODE MAP
+    1  TOKENS ......... palette, service colours, rack elevations
+    2  SCENE .......... renderer, cameras, lights, floor
+    3  HELPERS ........ materials, primitives, canvas text
+    4  BUILDERS ....... vessel / filter press / pump / dryer / RO ...
+    5  LAYOUT ......... EQUIPMENT TABLE  (edit co-ordinates here)
+    6  PIPING ......... LINE LIST        (edit routing here)
+    7  PLOT ........... grid, gridlines, bay zones, north
+    8  VIEW ........... camera control, 3D / plan switching
+    9  UI ............. legend, filters, tooltip, spec panel
+================================================================================
+-->
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%}
+body{background:#070a0e;font-family:'Consolas','Courier New',monospace;overflow:hidden;
+     min-height:600px}
+#wrap{width:100%;height:100%;min-height:600px;position:relative;background:#070a0e}
+canvas{display:block;position:absolute;top:0;left:0;touch-action:none}
+#hud{position:absolute;inset:0;pointer-events:none}
+
+/* ── toolbar ─────────────────────────────────────────────── */
+#bar{position:absolute;top:0;left:0;right:0;height:40px;background:#0d1319;
+     border-bottom:1px solid #1c2833;display:flex;align-items:center;gap:2px;
+     padding:0 10px;pointer-events:all;flex-wrap:nowrap;overflow-x:auto}
+#bar::-webkit-scrollbar{height:0}
+.b{background:none;color:#6f8ca8;border:1px solid transparent;padding:5px 9px;
+   font:10px 'Consolas',monospace;cursor:pointer;border-radius:2px;white-space:nowrap;letter-spacing:.3px}
+.b:hover{background:#16212e;color:#cfe3f5}
+.b.on{background:#0b2d4d;color:#5cc2ff;border-color:#17456f}
+.sep{width:1px;height:20px;background:#1c2833;margin:0 6px;flex-shrink:0}
+.blab{color:#33465a;font:9px 'Consolas',monospace;padding-right:4px;flex-shrink:0}
+
+/* ── overlays ────────────────────────────────────────────── */
+#mode-label{position:absolute;top:50px;left:14px;color:#5cc2ff;font:11px 'Consolas',monospace;
+            letter-spacing:1.5px}
+#mode-sub{position:absolute;top:66px;left:14px;color:#3d566e;font:9px 'Consolas',monospace;letter-spacing:.5px}
+
+#spec{position:absolute;top:50px;right:14px;width:224px;background:#0b1219ee;
+      border:1px solid #1c2833;border-radius:3px;padding:10px 12px;pointer-events:none}
+#sp-tag{color:#5cc2ff;font:12px 'Consolas',monospace;font-weight:bold;letter-spacing:1px}
+#sp-name{color:#8fa6bb;font:9px 'Consolas',monospace;margin:2px 0 7px;letter-spacing:.3px}
+#sp-body{color:#5d768c;font:9px 'Consolas',monospace}
+.sp-row{display:flex;gap:6px;margin:2px 0;font:9px 'Consolas',monospace;line-height:1.5}
+.sp-k{color:#3d566e;min-width:64px;flex-shrink:0}
+.sp-v{color:#7e99b0}
+
+#legend{position:absolute;bottom:54px;left:14px;background:#0b1219ee;border:1px solid #1c2833;
+        border-radius:3px;padding:9px 11px;pointer-events:all}
+#lg-title{color:#3d566e;font:9px 'Consolas',monospace;letter-spacing:1px;margin-bottom:6px}
+.lr{display:flex;align-items:center;gap:8px;margin:3px 0;cursor:pointer;opacity:1}
+.lr.off{opacity:.28}
+.ld{width:26px;height:3px;border-radius:2px;flex-shrink:0}
+.lt{color:#7e99b0;font:9px 'Consolas',monospace}
+
+#titleblock{position:absolute;bottom:54px;right:14px;width:250px;background:#0b1219ee;
+            border:1px solid #1c2833;border-radius:3px;pointer-events:none}
+#tb-h{padding:7px 10px;border-bottom:1px solid #1c2833}
+#tb-h b{color:#cfe3f5;font:11px 'Consolas',monospace;letter-spacing:.5px}
+#tb-h div{color:#3d566e;font:9px 'Consolas',monospace;margin-top:2px}
+.tb-r{display:flex;border-bottom:1px solid #141d27}
+.tb-r:last-child{border-bottom:none}
+.tb-c{flex:1;padding:5px 10px;font:9px 'Consolas',monospace;color:#7e99b0}
+.tb-c span{color:#33465a;display:block;font-size:8px;letter-spacing:.5px}
+
+#north{position:absolute;bottom:150px;right:22px;width:58px;height:58px;pointer-events:none}
+
+#sbar{position:absolute;bottom:0;left:0;right:0;height:30px;background:#090e13;
+      border-top:1px solid #161f29;display:flex;align-items:center;padding:0 12px;gap:20px;pointer-events:all}
+#sbar span{color:#33465a;font:9px 'Consolas',monospace;white-space:nowrap}
+#coords{color:#2f8f5c}
+#tip{position:absolute;display:none;background:#0b1219;border:1px solid #1c3a5a;border-radius:3px;
+     padding:8px 11px;pointer-events:none;z-index:99;font:9px 'Consolas',monospace;color:#8fa6bb;
+     max-width:210px;line-height:1.6}
+#tip b{color:#5cc2ff;font-size:10px;letter-spacing:.5px}
+#hint{position:absolute;bottom:54px;left:50%;transform:translateX(-50%);color:#243342;
+      font:9px 'Consolas',monospace;letter-spacing:.5px}
+#lines{position:absolute;top:52px;left:50%;transform:translateX(-50%);width:min(760px,94%);
+       max-height:calc(100% - 96px);background:#0b1219f5;border:1px solid #24384a;border-radius:4px;
+       display:none;flex-direction:column;pointer-events:all;z-index:60}
+#lines.open{display:flex}
+#ln-h{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid #1c2833;flex-shrink:0}
+#ln-h b{color:#5cc2ff;font:11px 'Consolas',monospace;letter-spacing:1px}
+#ln-h span{color:#3d566e;font:9px 'Consolas',monospace;flex:1}
+#ln-b{overflow-y:auto;padding:4px 0 10px}
+table.ls{width:100%;border-collapse:collapse;font:9px 'Consolas',monospace}
+table.ls th{color:#33465a;text-align:left;padding:5px 8px;border-bottom:1px solid #1c2833;
+            position:sticky;top:0;background:#0b1219;font-weight:normal}
+table.ls td{color:#7e99b0;padding:4px 8px;border-bottom:1px solid #121b23;vertical-align:top}
+table.ls td.no{color:#5cc2ff}
+table.ls tr:hover td{background:#101a24}
+.swatch{display:inline-block;width:16px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+#ln-note{color:#3d566e;font:9px 'Consolas',monospace;padding:9px 12px;line-height:1.7}
+@media(max-width:900px){#titleblock,#hint{display:none}#spec{width:190px}
+  table.ls td:nth-child(5),table.ls th:nth-child(5){display:none}}
+@media(max-width:620px){#legend{display:none}#spec{width:158px}#north{display:none}}
+</style>
+
+<div id="wrap">
+<canvas id="c3d"></canvas>
+<div id="hud">
+
+  <div id="bar">
+    <span class="blab">VIEW</span>
+    <button class="b on" id="b3d"  onclick="setMode('3d')">3D MODEL</button>
+    <button class="b"    id="btop" onclick="setMode('top')">TOP VIEW / PLOT PLAN</button>
+    <div class="sep"></div>
+    <button class="b" onclick="resetCam()">FIT</button>
+    <button class="b" onclick="zoomBy(1.25)">ZOOM +</button>
+    <button class="b" onclick="zoomBy(0.8)">ZOOM &minus;</button>
+    <div class="sep"></div>
+    <span class="blab">SECTION</span>
+    <button class="b on" id="z-all" onclick="focusBay(0)">ALL</button>
+    <button class="b" id="z-1" onclick="focusBay(1)">1 LEACHING</button>
+    <button class="b" id="z-2" onclick="focusBay(2)">2 PURIFICATION</button>
+    <button class="b" id="z-3" onclick="focusBay(3)">3 PRECIPITATION</button>
+    <button class="b" id="z-4" onclick="focusBay(4)">4 DRYING</button>
+    <button class="b" id="z-5" onclick="focusBay(5)">5 WATER RECOVERY</button>
+    <div class="sep"></div>
+    <button class="b on" id="b-lab"  onclick="toggleLabels()">TAGS: S</button>
+    <button class="b on" id="b-grid" onclick="toggleGrid()">GRID</button>
+    <button class="b"    id="b-flow" onclick="toggleFlow()">FLOW ANIM</button>
+    <button class="b"    id="b-sh"   onclick="toggleShadows()">SHADOWS</button>
+    <div class="sep"></div>
+    <button class="b"    id="b-line" onclick="showLines()">LINE SCHEDULE</button>
+  </div>
+
+  <div id="mode-label">3D EQUIPMENT MODEL</div>
+  <div id="mode-sub">drag = orbit &nbsp;|&nbsp; wheel = zoom &nbsp;|&nbsp; right-drag = pan &nbsp;|&nbsp; click item = spec</div>
+
+  <div id="spec">
+    <div id="sp-tag">PLANT OVERVIEW</div>
+    <div id="sp-name">ZnO recovery from zinc ash</div>
+    <div id="sp-body"></div>
+  </div>
+
+  <div id="legend"><div id="lg-title">LINE SERVICES</div></div>
+
+  <svg id="north" viewBox="0 0 58 58"></svg>
+
+  <div id="titleblock">
+    <div id="tb-h">
+      <b>JAMP INDUSTRIES</b>
+      <div>ZINC OXIDE RECOVERY PLANT &mdash; 500 kg/batch</div>
+    </div>
+    <div class="tb-r">
+      <div class="tb-c"><span>DRAWING</span>PLOT PLAN + 3D</div>
+      <div class="tb-c"><span>DWG No.</span>JI-ZNO-LAY-01</div>
+    </div>
+    <div class="tb-r">
+      <div class="tb-c"><span>PLOT</span>77.0 &times; 57.0 m</div>
+      <div class="tb-c"><span>GRID</span>5.0 m sq.</div>
+    </div>
+    <div class="tb-r">
+      <div class="tb-c"><span>SCALE</span>1 : 200 (A1)</div>
+      <div class="tb-c"><span>REV</span>R2 &mdash; ISSUED</div>
+    </div>
+  </div>
+
+  <div id="hint">click any equipment for its data sheet</div>
+
+  <div id="sbar">
+    <span id="coords">E 0.0 m &nbsp; N 0.0 m</span>
+    <span id="s-mode">MODE: 3D</span>
+    <span id="s-zoom">ZOOM: 100%</span>
+    <span id="s-count"></span>
+    <span style="margin-left:auto;color:#1a2530">JI-ZNO-LAY-01 &nbsp;|&nbsp; units: mm / m / KL</span>
+  </div>
+
+  <div id="lines">
+    <div id="ln-h"><b>LINE SCHEDULE</b>
+      <span>every run in the model, checked against the flow sheet</span>
+      <button class="b" onclick="showLines()">CLOSE</button></div>
+    <div id="ln-b"></div>
+  </div>
+
+  <div id="tip"></div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   1 ── TOKENS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** 1 world unit = 0.1 m. Helper: M(4.5) -> 45 units = 4.5 metres. */
+const M = m => m * 10;
+
+/* Line service colours — each service is a togglable layer (see legend). */
+const SVC = {
+  WATER : {c:0x2e93ff, n:'Raw / process water (well)'},
+  ACID  : {c:0xff9a2b, n:'Hydrochloric acid (HCl)'},
+  LIQUOR: {c:0x1fd68b, n:'ZnCl\u2082 liquor (filtrate)'},
+  ALKALI: {c:0xa96cff, n:'Alkali / NaOH solution'},
+  SLURRY: {c:0x93a4b5, n:'Reaction slurry to press'},
+  SOLID : {c:0xc98b3a, n:'Filter cake / dry solids'},
+  BRINE : {c:0xf0c53a, n:'Spent brine to RO'},
+  PERM  : {c:0x2fded0, n:'RO permeate recycle'},
+  GAS   : {c:0xff5a3c, n:'Hot air / dryer exhaust'},
+  WASTE : {c:0x62727f, n:'Residue / sludge / reject'}
+};
+
+/* Pipe-rack tiers. Every long run sits on its own elevation so that lines never
+   coincide and never pass through a vessel (tallest tank T-04 top = 4.2 m). */
+const TIER = {
+  PERM:M(8.6), WATER:M(8.0), ACID:M(7.4), ALKALI:M(6.8),
+  LIQUOR:M(6.2), SLURRY:M(5.6), BRINE:M(5.0), GAS:M(4.4), SOLID:M(3.4), LOW:M(0.9)
+};
+
+const PLINTH = M(0.6);            // all vessels stand on a 600 mm plinth
+const PLOT   = {x0:-M(38), x1:M(39), z0:-M(34), z1:M(23)};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2 ── SCENE
+   ═══════════════════════════════════════════════════════════════════════════ */
+const wrapEl = document.getElementById('wrap');
+const W3D = () => wrapEl.clientWidth;
+const H3D = () => wrapEl.clientHeight - 30;
+
+const renderer = new THREE.WebGLRenderer({canvas:document.getElementById('c3d'), antialias:true});
+/* Mobile GPUs choke on a 2048 shadow pass plus a 2x pixel ratio, so the
+   renderer drops to a lighter tier on small / low-core devices. */
+const LOWPOWER = (window.innerWidth < 900) || ((navigator.hardwareConcurrency||8) <= 4);
+let shadowsOn = !LOWPOWER;
+renderer.setPixelRatio(Math.min(devicePixelRatio, LOWPOWER?1.5:2));
+renderer.shadowMap.enabled = shadowsOn;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070a0e);
+
+const camera    = new THREE.PerspectiveCamera(38, 1, 1, 12000);
+const topCamera = new THREE.OrthographicCamera(-1,1,1,-1,1,2000);
+topCamera.up.set(0,0,-1);                    // lock plan orientation: NORTH = up
+
+let mode='3d', flowOn=false, labelMode=1, gridOn=true, animT=0;
+let dirty=true;
+const invalidate=()=>{dirty=true;};
+let camState = {theta:-0.62, phi:0.40, r:M(96), tx:0, ty:0, tz:-M(3)};
+let topState = {cx:0, cy:-M(5), zoom:0.85};
+
+const groups = {labels:new THREE.Group(), grid:new THREE.Group(), zones:new THREE.Group()};
+Object.values(groups).forEach(g=>scene.add(g));
+const svcGroups = {};                        // one THREE.Group per line service
+Object.keys(SVC).forEach(k=>{svcGroups[k]=new THREE.Group(); scene.add(svcGroups[k]);});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3 ── HELPERS
+   ═══════════════════════════════════════════════════════════════════════════ */
+const mat = (c,rough=.62,metal=.25,emis=0x000000)=>
+  new THREE.MeshStandardMaterial({color:c,roughness:rough,metalness:metal,emissive:emis,emissiveIntensity:.35});
+
+const cyl  = (r1,r2,h,m,s=18)=>new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,s),m);
+const box  = (w,h,d,m)=>new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);
+const ball = (r,m)=>new THREE.Mesh(new THREE.SphereGeometry(r,14,9),m);
+const ring = (r,t,m)=>new THREE.Mesh(new THREE.TorusGeometry(r,t,5,16),m);
+
+/** Tag plate that always faces the camera (readable in 3D and in plan). */
+function tagSprite(tag, sub, colour, scale=1){
+  const cv=document.createElement('canvas'); cv.width=320; cv.height=80;
+  const g=cv.getContext('2d');
+  g.fillStyle='rgba(8,13,19,0.80)'; g.fillRect(0,0,320,80);
+  g.strokeStyle=colour; g.lineWidth=2; g.strokeRect(1,1,318,78);
+  g.fillStyle=colour; g.fillRect(1,1,5,78);
+  g.font='bold 34px Consolas,monospace'; g.fillStyle=colour;
+  g.fillText(tag, 14, 36);
+  if(sub){ g.font='20px Consolas,monospace'; g.fillStyle='#8fa6bb'; g.fillText(sub, 14, 65); }
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({
+    map:new THREE.CanvasTexture(cv), transparent:true, depthTest:false, depthWrite:false}));
+  sp.userData.base=[M(3.4)*scale, M(0.85)*scale];      // tag plates kept small
+  sp.scale.set(sp.userData.base[0], sp.userData.base[1], 1);
+  sp.renderOrder = 900;
+  return sp;
+}
+
+/** Flat text painted on the ground — reads correctly in the plan view. */
+function groundText(text, x, z, w, colour='#2c5c85', size=44, align='left'){
+  const cv=document.createElement('canvas'); cv.width=512; cv.height=64;
+  const g=cv.getContext('2d');
+  g.font=`${Math.round(size/2)}px Consolas,monospace`; g.fillStyle=colour;
+  g.textAlign=align; g.textBaseline='middle';
+  g.fillText(text, align==='center'?256:4, 34);
+  const pl=new THREE.Mesh(new THREE.PlaneGeometry(w, w/8),
+    new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(cv),transparent:true,depthWrite:false}));
+  pl.rotation.x=-Math.PI/2; pl.position.set(x, 0.6, z);
+  return pl;
+}
+
+/* ── pipe primitives ───────────────────────────────────────────────────── */
+function segment(a,b,colour,r){
+  const A=new THREE.Vector3(...a), B=new THREE.Vector3(...b), L=A.distanceTo(B);
+  if(L<0.5) return null;
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,L,8), null);
+  m.position.copy(A).lerp(B,.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), B.clone().sub(A).normalize());
+  return m;
+}
+
+/**
+ * Collects a polyline as pipe barrels + elbows. Nothing is added to the scene
+ * here: bakePipes() welds each service into ONE mesh, which takes the drawing
+ * from ~180 draw calls down to 10. That is the single biggest win on a phone.
+ */
+const pipeParts={};
+function pipe(svc, pts, r=M(0.09)){
+  const colour=SVC[svc].c, bin=(pipeParts[svc]=pipeParts[svc]||[]);
+  for(let i=0;i<pts.length-1;i++){
+    const s=segment(pts[i],pts[i+1],colour,r); if(s) bin.push(s);
+    if(i>0){ const e=ball(r*1.3,null); e.position.set(...pts[i]); bin.push(e); }
+  }
+  return pts;
+}
+
+/** Welds an array of positioned meshes into one BufferGeometry. */
+function weld(meshes){
+  const pos=[], nor=[];
+  meshes.forEach(m=>{
+    m.updateMatrix();
+    const g=(m.geometry.index? m.geometry.toNonIndexed() : m.geometry.clone()).applyMatrix4(m.matrix);
+    const P=g.attributes.position.array, N=g.attributes.normal.array;
+    for(let i=0;i<P.length;i++) pos.push(P[i]);
+    for(let i=0;i<N.length;i++) nor.push(N[i]);
+    g.dispose();
+  });
+  const out=new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  out.setAttribute('normal',   new THREE.Float32BufferAttribute(nor,3));
+  return out;
+}
+
+function bakePipes(){
+  Object.keys(pipeParts).forEach(svc=>{
+    const colour=SVC[svc].c;
+    const m=new THREE.Mesh(weld(pipeParts[svc]), mat(colour,.35,.6,colour));
+    m.material.emissiveIntensity=.20;
+    svcGroups[svc].add(m);
+    pipeParts[svc].forEach(x=>x.geometry.dispose());
+    pipeParts[svc]=null;
+  });
+}
+
+/**
+ * ORTHOGONAL ROUTER — the fix for the diagonal lines in the previous drawing.
+ * Every run leaves its nozzle vertically, travels on a rack tier in X then Z
+ * (or Z then X), and drops vertically into the receiving nozzle.
+ */
+function route(a, b, tier, order='xz'){
+  const p=[[...a],[a[0],tier,a[2]]];
+  if(order==='xz'){ p.push([b[0],tier,a[2]],[b[0],tier,b[2]]); }
+  else            { p.push([a[0],tier,b[2]],[b[0],tier,b[2]]); }
+  p.push([...b]);
+  return p.filter((q,i,arr)=> i===0 || Math.hypot(q[0]-arr[i-1][0],q[1]-arr[i-1][1],q[2]-arr[i-1][2])>0.4);
+}
+
+/* ── animated flow markers: one Points cloud per service, not one mesh each ── */
+const flowPaths={}, flowSets=[];
+function flow(svc, pts){ (flowPaths[svc]=flowPaths[svc]||[]).push(pts); }
+
+function bakeFlow(){
+  Object.keys(flowPaths).forEach(svc=>{
+    const items=[];
+    flowPaths[svc].forEach(pts=>{
+      let total=0;
+      for(let i=1;i<pts.length;i++)
+        total+=new THREE.Vector3(...pts[i]).distanceTo(new THREE.Vector3(...pts[i-1]));
+      const n=Math.max(2, Math.floor(total/M(3.4)));
+      for(let i=0;i<n;i++) items.push({pts, off:i/n});
+    });
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(items.length*3),3));
+    const pts=new THREE.Points(geo, new THREE.PointsMaterial({
+      color:SVC[svc].c, size:5, sizeAttenuation:false, depthTest:true}));
+    pts.visible=false; pts.frustumCulled=false;
+    svcGroups[svc].add(pts);
+    flowSets.push({obj:pts, items, attr:geo.attributes.position});
+  });
+}
+
+function stepFlow(){
+  const v=new THREE.Vector3();
+  flowSets.forEach(set=>{
+    const a=set.attr.array;
+    set.items.forEach((it,i)=>{
+      v.copy(pointAt(it.pts,(animT+it.off)%1));
+      a[i*3]=v.x; a[i*3+1]=v.y; a[i*3+2]=v.z;
+    });
+    set.attr.needsUpdate=true;
+  });
+}
+function pointAt(pts,t){
+  const segs=[]; let total=0;
+  for(let i=1;i<pts.length;i++){
+    const d=new THREE.Vector3(...pts[i]).distanceTo(new THREE.Vector3(...pts[i-1]));
+    segs.push(d); total+=d;
+  }
+  let want=t*total, acc=0;
+  for(let i=0;i<segs.length;i++){
+    if(acc+segs[i]>=want) return new THREE.Vector3(...pts[i]).lerp(new THREE.Vector3(...pts[i+1]),(want-acc)/segs[i]);
+    acc+=segs[i];
+  }
+  return new THREE.Vector3(...pts[pts.length-1]);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4 ── EQUIPMENT BUILDERS
+   Every builder registers itself in EQ so the router, tooltip, spec panel and
+   plan labels all read from one source of truth.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const EQ={}, pickables=[];
+
+function register(g, d){
+  g.userData = d;
+  EQ[d.tag] = Object.assign(d,{group:g});
+  pickables.push(g); scene.add(g);
+  const lab=tagSprite(d.tag, d.short||'', d.colour||'#5cc2ff', d.labScale||1);
+  const ly=(d.labY!==undefined?d.labY:(d.top||M(4))+M(2.2));
+  lab.userData.home={x:d.x, y:ly, z:d.z};
+  lab.userData.plan={x:d.x, y:M(40), z:d.z+(d.r||M(1))+M(1.6)*(d.labScale||1)};
+  lab.position.set(d.x, ly, d.z);
+  groups.labels.add(lab);
+  d.label=lab;
+  return g;
+}
+
+function plinth(g,r,shape='round'){
+  const m=mat(0x1b2530,.95,.05);
+  const p = shape==='round' ? cyl(r*1.22,r*1.28,PLINTH,m,26) : box(r*2.4,PLINTH,r*2.4,m);
+  p.position.y=PLINTH/2; p.receiveShadow=true; g.add(p);
+}
+
+/* ── agitated HDPE spiral reactor ─────────────────────────────────────── */
+function Reactor(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const r=o.d/2, base=PLINTH, bodyM=mat(o.col||0x27506f,.55,.35), capM=mat(o.cap||0x36688c,.45,.5);
+  plinth(g,r);
+  const body=cyl(r,r,o.h,bodyM,20); body.position.y=base+o.h/2; body.castShadow=true; g.add(body);
+
+  // spiral-wound shell texture: stacked bands
+  for(let i=0;i<4;i++){
+    const b=ring(r+0.4,0.5,mat(0x1b3040,.6,.4));
+    b.rotation.x=Math.PI/2; b.position.y=base+M(0.4)+i*(o.h/5); g.add(b);
+  }
+  const top=ball(r,capM); top.scale.y=.34; top.position.y=base+o.h; g.add(top);
+  const bot=ball(r,capM); bot.scale.y=.26; bot.position.y=base; g.add(bot);
+
+  // agitator: gearbox + motor + shaft + two paddle impellers
+  const gearbox=box(r*.55,M(0.5),r*.55,mat(0x3d4b58,.5,.7)); gearbox.position.y=base+o.h+M(0.5); g.add(gearbox);
+  const motor=cyl(M(0.28),M(0.28),M(0.75),mat(0x4a5b6a,.4,.8),14);
+  motor.rotation.z=Math.PI/2; motor.position.set(r*.75,base+o.h+M(0.55),0); g.add(motor);
+  const shaft=cyl(M(0.09),M(0.09),o.h*.9,mat(0x6b7c8c,.35,.85),10);
+  shaft.position.y=base+o.h*.5; g.add(shaft);
+  for(let i=0;i<2;i++){
+    const bl=box(r*1.5,M(0.16),M(0.32),mat(0x5a6b7a,.4,.8));
+    bl.position.y=base+o.h*(0.18+i*0.30); g.add(bl);
+    const bl2=bl.clone(); bl2.rotation.y=Math.PI/2; g.add(bl2);
+  }
+  // nozzles + manway + ladder
+  const nz=mat(0x445565,.35,.85);
+  [[0,base+o.h+M(0.1),0,M(0.6)],[r,base+M(0.35),0,M(0.5)]].forEach(([nx,ny,nzz,L],i)=>{
+    const n=cyl(M(0.11),M(0.11),L,nz,10);
+    if(i===1){n.rotation.z=Math.PI/2; n.position.set(r+L/2,ny,nzz);} else n.position.set(nx,ny+L/2,nzz);
+    g.add(n);
+  });
+  const mw=cyl(M(0.3),M(0.3),M(0.12),capM,16); mw.rotation.z=Math.PI/2;
+  mw.position.set(r,base+o.h*.72,0); g.add(mw);
+  for(let i=0;i<5;i++){
+    const rung=box(M(0.36),M(0.03),M(0.03),mat(0x39485a,.7,.5));
+    rung.position.set(-r-M(0.22),base+M(0.4)+i*(o.h/6),0); g.add(rung);
+  }
+  return register(g,Object.assign({top:base+o.h+M(1.0), r, base},o));
+}
+
+/* ── plain storage / surge tank (no agitator) ─────────────────────────── */
+function Tank(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const r=o.d/2, base=PLINTH, bodyM=mat(o.col||0x4a3a20,.6,.3);
+  plinth(g,r);
+  const body=cyl(r,r,o.h,bodyM,26); body.position.y=base+o.h/2; body.castShadow=true; g.add(body);
+  const top=ball(r,mat(o.cap||0x63512c,.5,.4)); top.scale.y=.3; top.position.y=base+o.h; g.add(top);
+  for(let i=0;i<3;i++){const b=ring(r+0.4,0.5,mat(0x22303c,.6,.4));
+    b.rotation.x=Math.PI/2; b.position.y=base+o.h*(0.25+i*0.28); g.add(b);}
+  const vent=cyl(M(0.08),M(0.08),M(0.5),mat(0x445565,.35,.85),8);
+  vent.position.set(r*.5,base+o.h+M(0.25),0); g.add(vent);
+  // level gauge strip
+  const lg=box(M(0.06),o.h*.8,M(0.06),mat(0x8fbf6a,.4,.3,0x2a4a1a));
+  lg.position.set(0,base+o.h*.5,r+M(0.05)); g.add(lg);
+  return register(g,Object.assign({top:base+o.h+M(0.5), r, base},o));
+}
+
+/* ── recessed-chamber filter press ────────────────────────────────────── */
+function FilterPress(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const plate=o.plate, L=o.len, H=plate*1.25, D=plate*1.15;
+  // side beams
+  const beamM=mat(0x36424f,.55,.7);
+  [-1,1].forEach(s=>{ const bm=box(L,M(0.16),M(0.16),beamM);
+    bm.position.set(0,PLINTH+H*.62,s*D*.42); g.add(bm); });
+  // head + tail stand
+  [[-L/2,0x2c3a48],[L/2,0x2c3a48]].forEach(([px,c])=>{
+    const hd=box(M(0.28),H,D,mat(c,.55,.6)); hd.position.set(px,PLINTH+H/2,0); g.add(hd);
+  });
+  // PP recessed plates
+  const plM=mat(0xb9c4cd,.75,.05), n=o.plates;
+  for(let i=0;i<n;i++){
+    const p=box(M(0.1),H*.94,D*.94,plM);
+    p.position.set(-L/2+M(0.4)+i*((L-M(0.8))/n), PLINTH+H/2, 0); g.add(p);
+  }
+  // hydraulic / manual closing gear
+  const cyl1=cyl(M(0.2),M(0.2),M(0.7),mat(0x5a6a78,.35,.85),12);
+  cyl1.rotation.z=Math.PI/2; cyl1.position.set(-L/2-M(0.4),PLINTH+H*.5,0); g.add(cyl1);
+  if(o.closing==='HYD'){
+    const pack=box(M(0.7),M(0.55),M(0.6),mat(0x8a5a20,.6,.4));
+    pack.position.set(-L/2-M(0.95),PLINTH+M(0.3),0); g.add(pack);
+  }
+  // 2" NB air inlet nozzle (FP-03 data sheet) on the tail head
+  if(o.airNozzle){
+    const an=cyl(M(0.11),M(0.11),M(0.55),mat(0x8fd0ff,.35,.7,0x1a4a70),8);
+    an.rotation.z=Math.PI/2; an.position.set(L/2+M(0.42),PLINTH+H*0.88,0); g.add(an);
+  }
+  // legs + drip tray
+  [-1,1].forEach(sx=>[-1,1].forEach(sz=>{
+    const lg=box(M(0.14),PLINTH+H*.35,M(0.14),mat(0x28323d,.8,.4));
+    lg.position.set(sx*L*.4,(PLINTH+H*.35)/2,sz*D*.38); g.add(lg);
+  }));
+  const tray=box(L*1.02,M(0.1),D*1.05,mat(0x1d2833,.9,.15));
+  tray.position.y=PLINTH*.4; g.add(tray);
+  // cake receiving bin below discharge
+  const bin=box(L*.5,M(0.7),D*.8,mat(0x2a231a,.9,.1));
+  bin.position.set(0,M(0.35),-D*1.1); g.add(bin);
+  return register(g,Object.assign({top:PLINTH+H+M(0.6), r:L/2, H, D},o));
+}
+
+/* ── horizontal centrifugal pump on baseplate ─────────────────────────── */
+function Pump(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const bp=box(M(1.0),M(0.16),M(0.55),mat(0x232d38,.85,.3)); bp.position.y=M(0.08); g.add(bp);
+  const cas=cyl(M(0.26),M(0.26),M(0.22),mat(0x3f5468,.45,.7),18);
+  cas.rotation.x=Math.PI/2; cas.position.set(-M(0.28),M(0.36),0); g.add(cas);
+  const mot=cyl(M(0.2),M(0.2),M(0.55),mat(0x4c5f70,.4,.75),14);
+  mot.rotation.z=Math.PI/2; mot.position.set(M(0.22),M(0.34),0); g.add(mot);
+  const suc=cyl(M(0.1),M(0.1),M(0.3),mat(0x445565,.35,.85),10);
+  suc.rotation.z=Math.PI/2; suc.position.set(-M(0.55),M(0.36),0); g.add(suc);
+  const dis=cyl(M(0.08),M(0.08),M(0.3),mat(0x445565,.35,.85),10);
+  dis.position.set(-M(0.28),M(0.62),0); g.add(dis);
+  return register(g,Object.assign({top:M(0.8), r:M(0.5), nozY:M(0.62), labScale:.72},o));
+}
+
+/* ── rotary dryer 200–300 °C ──────────────────────────────────────────── */
+function Dryer(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const r=M(0.75), L=o.len;
+  const shell=cyl(r,r,L,mat(0x6b3524,.6,.45),26);
+  shell.rotation.z=Math.PI/2; shell.position.y=M(1.5); g.add(shell);
+  for(let i=0;i<3;i++){ const b=ring(r+0.6,M(0.09),mat(0x8a4a2a,.5,.6));
+    b.rotation.y=Math.PI/2; b.position.set(-L/2+M(0.9)+i*(L-M(1.8))/2,M(1.5),0); g.add(b); }
+  // trunnion supports
+  [-1,1].forEach(s=>{ const sp=box(M(0.5),M(1.5),M(1.9),mat(0x28323d,.85,.3));
+    sp.position.set(s*L*0.3,M(0.75),0); g.add(sp); });
+  // feed hopper (west) + discharge chute (east)
+  const hop=new THREE.Mesh(new THREE.CylinderGeometry(M(0.7),M(0.22),M(1.0),4),mat(0x3c4a58,.7,.4));
+  hop.rotation.y=Math.PI/4; hop.position.set(-L/2-M(0.2),M(2.5),0); g.add(hop);
+  const ch=box(M(0.6),M(1.1),M(0.6),mat(0x3c4a58,.7,.4));
+  ch.position.set(L/2+M(0.3),M(1.0),0); g.add(ch);
+  const drv=box(M(0.7),M(0.6),M(0.7),mat(0x44525f,.5,.6)); drv.position.set(0,M(0.4),r+M(0.9)); g.add(drv);
+  return register(g,Object.assign({top:M(3.4), r:L/2},o));
+}
+
+function HotAirGen(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const b=box(M(2.0),M(1.8),M(1.6),mat(0x5c2a18,.7,.35)); b.position.y=M(0.9); g.add(b);
+  const door=box(M(0.1),M(0.9),M(0.9),mat(0xa8481f,.5,.5,0x3a1000)); door.position.set(-M(1.0),M(0.8),0); g.add(door);
+  const duct=cyl(M(0.3),M(0.3),M(1.2),mat(0x7a3a22,.5,.5),14);
+  duct.rotation.z=Math.PI/2; duct.position.set(M(1.5),M(1.4),0); g.add(duct);
+  const blow=cyl(M(0.4),M(0.4),M(0.4),mat(0x44525f,.5,.6),16);
+  blow.rotation.x=Math.PI/2; blow.position.set(-M(0.6),M(0.4),M(1.1)); g.add(blow);
+  return register(g,Object.assign({top:M(2.4), r:M(1.2)},o));
+}
+
+function Cyclone(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const bar=cyl(M(0.55),M(0.55),M(1.1),mat(0x45525f,.55,.55),22); bar.position.y=M(3.0); g.add(bar);
+  const cone=cyl(M(0.55),M(0.12),M(1.7),mat(0x3c4a58,.55,.55),22); cone.position.y=M(1.6); g.add(cone);
+  const outl=cyl(M(0.22),M(0.22),M(0.9),mat(0x55636f,.5,.6),14); outl.position.y=M(3.9); g.add(outl);
+  const bin=cyl(M(0.35),M(0.35),M(0.7),mat(0x2a231a,.9,.1),14); bin.position.y=M(0.4); g.add(bin);
+  [-1,1].forEach(s=>{const lg=box(M(0.12),M(2.2),M(0.12),mat(0x28323d,.8,.4));
+    lg.position.set(s*M(0.5),M(1.1),s*M(0.5)); g.add(lg);});
+  return register(g,Object.assign({top:M(4.5), r:M(0.7)},o));
+}
+
+function BagFilter(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const b=box(M(1.6),M(2.4),M(1.3),mat(0x35434f,.65,.4)); b.position.y=M(2.2); g.add(b);
+  const hop=new THREE.Mesh(new THREE.CylinderGeometry(M(0.8),M(0.2),M(1.0),4),mat(0x2d3945,.7,.35));
+  hop.rotation.y=Math.PI/4; hop.position.y=M(0.5); g.add(hop);
+  for(let i=0;i<4;i++){const t=cyl(M(0.1),M(0.1),M(0.5),mat(0x55636f,.5,.6),8);
+    t.position.set(-M(0.55)+i*M(0.37),M(3.6),0); g.add(t);}
+  [-1,1].forEach(sx=>[-1,1].forEach(sz=>{const lg=box(M(0.12),M(1.0),M(0.12),mat(0x28323d,.8,.4));
+    lg.position.set(sx*M(0.6),M(0.5),sz*M(0.5)); g.add(lg);}));
+  return register(g,Object.assign({top:M(4.0), r:M(0.9)},o));
+}
+
+function IDFan(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const c=cyl(M(0.7),M(0.7),M(0.45),mat(0x44525f,.5,.6),22); c.rotation.x=Math.PI/2; c.position.y=M(1.0); g.add(c);
+  const m=cyl(M(0.28),M(0.28),M(0.8),mat(0x4c5f70,.4,.75),14); m.rotation.z=Math.PI/2; m.position.set(M(0.9),M(1.0),0); g.add(m);
+  const bp=box(M(2.0),M(0.2),M(0.9),mat(0x232d38,.85,.3)); bp.position.y=M(0.1); g.add(bp);
+  return register(g,Object.assign({top:M(1.8), r:M(0.9), labScale:.8},o));
+}
+
+function Stack(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const s=cyl(M(0.3),M(0.42),M(12),mat(0x3a4652,.6,.5),18); s.position.y=M(6.2); g.add(s);
+  for(let i=0;i<3;i++){const b=ring(M(0.33),M(0.05),mat(0xb04a20,.6,.3));
+    b.rotation.x=Math.PI/2; b.position.y=M(3)+i*M(3); g.add(b);}
+  const bs=cyl(M(0.7),M(0.8),M(0.4),mat(0x232d38,.9,.2),18); bs.position.y=M(0.2); g.add(bs);
+  return register(g,Object.assign({top:M(12.6), r:M(0.8), labY:M(13.4)},o));
+}
+
+function Mill(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const b=box(M(1.8),M(1.4),M(1.2),mat(0x2c4030,.7,.35)); b.position.y=M(0.9); g.add(b);
+  const rot=cyl(M(0.45),M(0.45),M(1.3),mat(0x3d5a42,.5,.55),18);
+  rot.rotation.z=Math.PI/2; rot.position.y=M(1.75); g.add(rot);
+  const mo=cyl(M(0.3),M(0.3),M(0.8),mat(0x4c5f70,.4,.75),14);
+  mo.rotation.z=Math.PI/2; mo.position.set(-M(1.3),M(0.7),0); g.add(mo);
+  const hop=new THREE.Mesh(new THREE.CylinderGeometry(M(0.6),M(0.18),M(0.8),4),mat(0x3c4a58,.7,.4));
+  hop.rotation.y=Math.PI/4; hop.position.y=M(2.7); g.add(hop);
+  return register(g,Object.assign({top:M(3.2), r:M(1.0)},o));
+}
+
+function Packing(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const b=box(M(1.4),M(1.6),M(1.2),mat(0x24382a,.75,.25)); b.position.y=M(1.0); g.add(b);
+  const sp=new THREE.Mesh(new THREE.CylinderGeometry(M(0.45),M(0.16),M(0.6),4),mat(0x3c4a58,.7,.35));
+  sp.rotation.y=Math.PI/4; sp.position.y=M(2.1); g.add(sp);
+  const belt=box(M(2.4),M(0.12),M(0.7),mat(0x1e2830,.9,.2)); belt.position.set(M(1.7),M(0.5),0); g.add(belt);
+  for(let i=0;i<4;i++){
+    const bag=box(M(0.42),M(0.5),M(0.3),mat(0x6d7f56,.9,.05));
+    bag.position.set(M(1.0)+i*M(0.55),M(0.8),0); bag.rotation.y=(i%2)*0.2; g.add(bag);
+  }
+  const pal=box(M(1.1),M(0.15),M(1.0),mat(0x4a3a22,.95,.05)); pal.position.set(M(3.1),M(0.08),0); g.add(pal);
+  return register(g,Object.assign({top:M(2.6), r:M(1.2)},o));
+}
+
+/* Cartridge pre-filter — shown on the flow sheet between the brine pump
+   and the RO skid ("PUMP / FILTER / RO"). */
+function Cartridge(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const sk=box(M(1.1),M(0.16),M(0.8),mat(0x232d38,.85,.3)); sk.position.y=M(0.08); g.add(sk);
+  const bd=cyl(M(0.32),M(0.32),M(1.5),mat(0xa8b6c0,.45,.35),14); bd.position.y=M(0.95); g.add(bd);
+  const cap=cyl(M(0.36),M(0.36),M(0.12),mat(0x5a6a78,.4,.7),14); cap.position.y=M(1.76); g.add(cap);
+  const cl=cyl(M(0.09),M(0.09),M(0.4),mat(0x445565,.35,.85),8);
+  cl.rotation.z=Math.PI/2; cl.position.set(-M(0.5),M(0.5),0); g.add(cl);
+  const co=cl.clone(); co.position.set(M(0.5),M(1.4),0); g.add(co);
+  return register(g,Object.assign({top:M(2.0), r:M(0.7), labScale:.8},o));
+}
+
+function ROSkid(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const sk=box(M(3.0),M(0.2),M(1.4),mat(0x232d38,.85,.3)); sk.position.y=M(0.1); g.add(sk);
+  for(let i=0;i<3;i++){
+    const v=cyl(M(0.22),M(0.22),M(2.6),mat(0xc9d3da,.5,.25),16);
+    v.rotation.z=Math.PI/2; v.position.set(0,M(0.6)+i*M(0.5),0); g.add(v);
+    [-1,1].forEach(s=>{const cp=cyl(M(0.24),M(0.24),M(0.12),mat(0x4c5f70,.4,.7),14);
+      cp.rotation.z=Math.PI/2; cp.position.set(s*M(1.35),M(0.6)+i*M(0.5),0); g.add(cp);});
+  }
+  const hp=cyl(M(0.24),M(0.24),M(0.7),mat(0x4c5f70,.4,.75),14);
+  hp.rotation.z=Math.PI/2; hp.position.set(-M(1.0),M(0.35),M(0.55)); g.add(hp);
+  const pan=box(M(0.5),M(0.7),M(0.1),mat(0x1b2a38,.5,.4,0x0a2030));
+  pan.position.set(M(1.3),M(1.3),M(0.7)); g.add(pan);
+  return register(g,Object.assign({top:M(2.6), r:M(1.6)},o));
+}
+
+function Well(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const apron=cyl(M(1.3),M(1.3),M(0.25),mat(0x27313b,.95,.05),24); apron.position.y=M(0.12); g.add(apron);
+  const cas=cyl(M(0.35),M(0.35),M(1.0),mat(0x3a4a58,.6,.5),18); cas.position.y=M(0.7); g.add(cas);
+  const head=cyl(M(0.45),M(0.45),M(0.3),mat(0x4c5f70,.4,.7),18); head.position.y=M(1.3); g.add(head);
+  const dis=cyl(M(0.14),M(0.14),M(1.2),mat(0x445565,.35,.85),10);
+  dis.rotation.z=Math.PI/2; dis.position.set(M(0.6),M(1.3),0); g.add(dis);
+  const panel=box(M(0.5),M(0.8),M(0.2),mat(0x2c3a48,.7,.4)); panel.position.set(-M(1.0),M(0.5),0); g.add(panel);
+  return register(g,Object.assign({top:M(1.8), r:M(1.3)},o));
+}
+
+/** Charging platform for zinc ash / caustic flakes drum tipping. */
+function ChargePlatform(o){
+  const g=new THREE.Group(); g.position.set(o.x,0,o.z);
+  const deck=box(M(2.4),M(0.12),M(1.8),mat(0x2b3742,.85,.35)); deck.position.y=o.hgt; g.add(deck);
+  [-1,1].forEach(sx=>[-1,1].forEach(sz=>{const lg=box(M(0.12),o.hgt,M(0.12),mat(0x28323d,.8,.4));
+    lg.position.set(sx*M(1.05),o.hgt/2,sz*M(0.78)); g.add(lg);}));
+  for(let i=0;i<7;i++){const st=box(M(0.5),M(0.05),M(0.22),mat(0x33404c,.8,.4));
+    st.position.set(-M(1.4),o.hgt*(i+1)/8,0); g.add(st);}
+  const rail=box(M(2.4),M(0.06),M(0.06),mat(0x3a4a58,.7,.5));
+  rail.position.set(0,o.hgt+M(0.9),-M(0.85)); g.add(rail);
+  for(let i=0;i<2;i++){const dr=cyl(M(0.28),M(0.28),M(0.8),mat(0x6a5a2a,.85,.2),14);
+    dr.position.set(-M(0.5)+i*M(0.9),o.hgt+M(0.46),M(0.3)); g.add(dr);}
+  return register(g,Object.assign({top:o.hgt+M(1.2), r:M(1.2), labScale:.75},o));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5 ── LAYOUT  —  EQUIPMENT TABLE
+   Bays run west -> east so material never doubles back on itself.
+
+        Z = +18.5 m   BAY 5   water supply / effluent + RO
+        Z = +15.0 m   BAY 3b  alkali preparation
+        Z =  +5.5 m   BAY 1-3 reaction & tank farm  (T-01 .. T-04)
+        Z =  -0.5 m   ------- central pipe rack corridor -------
+        Z =  -7.5 m   BAY 1-3 filtration            (FP-01..FP-03)
+        Z = -21.5 m   BAY 4   drying, milling, packing
+        Z = -30.0 m   BAY 4b  gas cleaning
+   ═══════════════════════════════════════════════════════════════════════════ */
+const ZR = M(5.5), ZF = -M(7.5), ZU = M(18.5), ZP = -M(21.5), ZG = -M(30);
+
+function buildPlant(){
+
+  /* ── BAY 5 · water supply ──────────────────────────────────────────── */
+  Well({tag:'WELL', x:-M(30), z:ZU, bay:5, colour:'#2e93ff', short:'bore well',
+        name:'Bore well & submersible pump',
+        spec:[['Service','Raw water source'],['Feeds','T-01, T-02, T-03, T-04'],
+              ['Also','FP-03 cake wash water'],['Header','Common water line, 2" NB']]});
+
+  /* ── BAY 1 · leaching ──────────────────────────────────────────────── */
+  Tank({tag:'ST-1', x:-M(32), z:ZR, d:M(2.2), h:M(2.7), bay:1, col:0x6b3a12, cap:0x8a4d18,
+        colour:'#ff9a2b', short:'acid 10 KL', name:'Acid water storage',
+        spec:[['Capacity','10 KL'],['Shell','HDPE spiral, \u00d8 2200 mm'],
+              ['Service','Acid water (HCl) to T-01'],['Pumps','P-1 duty / P-2 standby']]});
+
+  Pump({tag:'P-1', x:-M(29.4), z:ZR, bay:1, colour:'#ff9a2b', short:'acid duty',
+        name:'Acid transfer pump (duty)', spec:PUMP_SPEC('ST-1 \u2192 T-01')});
+  Pump({tag:'P-2', x:-M(29.4), z:ZR-M(2.6), bay:1, colour:'#ff9a2b', short:'acid standby',
+        name:'Acid transfer pump (standby)', spec:PUMP_SPEC('ST-1 \u2192 T-01')});
+
+  Reactor({tag:'T-01', x:-M(21.5), z:ZR, d:M(2.2), h:M(3.2), bay:1, col:0x27506f, cap:0x36688c,
+        colour:'#93a4b5', short:'leaching 12 KL', name:'Leaching reactor',
+        spec:[['Capacity','12 KL'],['Shell','HDPE spiral \u00d8 2200 \u00d7 H 3200 mm'],
+              ['Thickness','15 / 18 / 20 mm; bottom 20, top 12'],
+              ['Design temp','80 \u00b0C'],['Agitator','MS with HDPE coating, 7.5 HP'],
+              ['Charge','Zinc ash + HCl + recycled RO permeate'],
+              ['Reaction','Zn + 2HCl \u2192 ZnCl\u2082 + H\u2082'],
+              ['Instruments','pHI-01 pH indicator, TE-01 temp sensor']]});
+
+  ChargePlatform({tag:'CP-01', x:-M(21.5), z:ZR-M(3.4), hgt:M(3.0), bay:1, colour:'#c98b3a',
+        short:'zinc ash charging', name:'Zinc ash charging platform',
+        spec:[['Duty','Manual drum charging to T-01'],['Deck level','+3.0 m'],
+              ['Raw material','Zinc ash']]});
+
+  Pump({tag:'P-3', x:-M(18.9), z:ZR, bay:1, colour:'#93a4b5', short:'slurry',
+        name:'Slurry feed pump to FP-01', spec:PUMP_SPEC('T-01 \u2192 FP-01')});
+
+  FilterPress({tag:'FP-01', x:-M(21.5), z:ZF, len:M(1.8), plate:M(0.46), plates:7, closing:'MAN',
+        bay:1, colour:'#b9c4cd', short:'1.50 m\u00b2 press', name:'Primary filter press',
+        spec:[['Model','18 \u00d7 18 \u00d7 07'],['Plate size','460 \u00d7 460 mm'],
+              ['Chambers','6 (5 recessed + 2 end plates)'],
+              ['Area','0.25 m\u00b2/chamber \u2014 1.50 m\u00b2/press'],
+              ['Cake hold','5 L/chamber \u2014 30 L/press'],
+              ['Closing','Manual'],['Feed press.','4 kg/cm\u00b2 (design 5)'],
+              ['Max temp','80 \u00b0C'],['MOC','Polypropylene, centre feed'],
+              ['Cake thk','40 \u00b1 2 mm'],['Outlet','Open delivery, both sides'],
+              ['Solids out','Black residue \u2248 20 kg/batch']]});
+
+  Tank({tag:'ST-2', x:-M(13.5), z:ZR, d:M(1.4), h:M(1.9), bay:1, col:0x1d4a38, cap:0x246a4c,
+        colour:'#1fd68b', short:'ZnCl\u2082 2 KL', name:'Filtered ZnCl\u2082 receiver',
+        spec:[['Capacity','2 KL'],['Contents','Filtered ZnCl\u2082 liquor from FP-01'],
+              ['Next step','P-4 \u2192 T-02 purification']]});
+
+  Pump({tag:'P-4', x:-M(11.4), z:ZR, bay:2, colour:'#1fd68b', short:'liquor',
+        name:'ZnCl\u2082 transfer pump', spec:PUMP_SPEC('ST-2 \u2192 T-02')});
+
+  /* ── BAY 2 · purification ──────────────────────────────────────────── */
+  Reactor({tag:'T-02', x:-M(6.5), z:ZR, d:M(2.2), h:M(2.7), bay:2, col:0x235a56, cap:0x2f7a72,
+        colour:'#93a4b5', short:'purification 10 KL', name:'Purification / treatment reactor',
+        spec:[['Capacity','10 KL'],['Shell','HDPE spiral \u00d8 2200 \u00d7 H 2700 mm'],
+              ['Thickness','15 / 18 / 20 mm; bottom 20, top 12'],
+              ['Design temp','80 \u00b0C'],['Agitator','MS, 7.5 HP'],
+              ['Duty','Alkali solution + chemical dosing to drop out impurities'],
+              ['Instruments','pHI-02 pH indicator']]});
+
+  Pump({tag:'P-6', x:-M(3.9), z:ZR, bay:2, colour:'#93a4b5', short:'slurry',
+        name:'Slurry feed pump to FP-02', spec:PUMP_SPEC('T-02 \u2192 FP-02')});
+
+  FilterPress({tag:'FP-02', x:-M(6.5), z:ZF, len:M(5.8), plate:M(0.91), plates:13, closing:'HYD',
+        bay:2, colour:'#b9c4cd', short:'52.80 m\u00b2 press', name:'Secondary filter press',
+        spec:[['Model','36 \u00d7 36 \u00d7 41'],['Plate size','910 \u00d7 910 mm'],
+              ['Chambers','40 (39 recessed + 2 end plates)'],
+              ['Area','1.32 m\u00b2/chamber \u2014 52.80 m\u00b2/press'],
+              ['Cake hold','30 L/chamber \u2014 1200 L/press'],
+              ['Closing','Hydraulic'],['Feed press.','4 kg/cm\u00b2 (design 5)'],
+              ['Max temp','85 \u00b0C'],['MOC','Polypropylene, centre feed'],
+              ['Cake thk','40 \u00b1 2 mm'],['Feed nozzle','3" NB \u00d7 1'],
+              ['Outlet','Open delivery through nozzle'],
+              ['Solids out','ZnCl\u2082 impurity sludge']]});
+
+  Tank({tag:'ST-3', x:M(1.0), z:ZR, d:M(1.8), h:M(2.2), bay:2, col:0x1d4a38, cap:0x246a4c,
+        colour:'#1fd68b', short:'pure ZnCl\u2082', name:'Purified ZnCl\u2082 storage',
+        spec:[['Contents','Purified ZnCl\u2082 liquor from FP-02'],
+              ['Next step','P-5 \u2192 T-04 precipitation']]});
+
+  Pump({tag:'P-5', x:M(3.2), z:ZR, bay:3, colour:'#1fd68b', short:'liquor',
+        name:'ZnCl\u2082 transfer pump', spec:PUMP_SPEC('ST-3 \u2192 T-04')});
+
+  /* ── BAY 3b · alkali preparation ───────────────────────────────────── */
+  Reactor({tag:'T-03', x:M(3.5), z:M(15.0), d:M(2.2), h:M(2.7), bay:3, col:0x40306e, cap:0x54408c,
+        colour:'#a96cff', short:'alkali prep 10 KL', name:'Alkali preparation tank',
+        spec:[['Capacity','10 KL'],['Shell','HDPE spiral \u00d8 2200 \u00d7 H 2700 mm'],
+              ['Design temp','80 \u00b0C'],['Agitator','MS, 7.5 HP'],
+              ['Charge','Caustic soda flakes + well water'],
+              ['Supplies','T-02 (purification) and T-04 (precipitation)']]});
+
+  ChargePlatform({tag:'CP-02', x:M(0.4), z:M(15.0), hgt:M(3.0), bay:3, colour:'#a96cff',
+        short:'caustic charging', name:'Caustic flake charging platform',
+        spec:[['Duty','Caustic soda flake charging to T-03'],['Deck level','+3.0 m']]});
+
+  Pump({tag:'P-7', x:M(6.1), z:M(15.0), bay:3, colour:'#a96cff', short:'alkali',
+        name:'Alkali dosing pump', spec:PUMP_SPEC('T-03 \u2192 T-02 & T-04')});
+
+  /* ── BAY 3 · precipitation ─────────────────────────────────────────── */
+  Reactor({tag:'T-04', x:M(18.5), z:ZR, d:M(2.7), h:M(3.6), bay:3, col:0x143a63, cap:0x1c5288,
+        colour:'#93a4b5', short:'precipitation 20 KL', name:'Precipitation reactor',
+        spec:[['Capacity','20 KL'],['Shell','HDPE spiral \u00d8 2700 \u00d7 H 3600 mm'],
+              ['Thickness','18 / 20 / 25 mm; bottom 28, top 15'],
+              ['Design temp','80 \u00b0C'],['Agitator','MS, 10 HP'],
+              ['Duty','ZnCl\u2082 + alkali solution \u2192 precipitate solution + NaCl brine'],
+              ['Instruments','pHI-03 pH indicator']]});
+
+  Pump({tag:'P-8', x:M(21.3), z:ZR, bay:3, colour:'#93a4b5', short:'slurry',
+        name:'Slurry feed pump to FP-03', spec:PUMP_SPEC('T-04 \u2192 FP-03')});
+
+  FilterPress({tag:'FP-03', x:M(18.5), z:ZF, len:M(7.2), plate:M(0.91), plates:15, closing:'HYD', airNozzle:true,
+        bay:3, colour:'#b9c4cd', short:'71.28 m\u00b2 press', name:'Final filter press',
+        spec:[['Model','36 \u00d7 36 \u00d7 55'],['Plate size','910 \u00d7 910 mm'],
+              ['Chambers','54 (53 recessed + 2 end plates)'],
+              ['Area','1.32 m\u00b2/chamber \u2014 71.28 m\u00b2/press'],
+              ['Cake hold','30 L/chamber \u2014 1620 L/press'],
+              ['Closing','Hydraulic'],['Feed press.','4 kg/cm\u00b2 (design 5)'],
+              ['Max temp','85 \u00b0C'],['MOC','Polypropylene, centre feed'],
+              ['Cake thk','40 \u00b1 2 mm'],['Outlet','Closed delivery through nozzle'],
+              ['Nozzles','Feed 3" NB \u00d7 1 | Air 2" NB \u00d7 1'],
+              ['','Wash 2" NB \u00d7 1 | Filtrate 2" NB \u00d7 2'],
+              ['Cake out','Zinc hydroxide cake \u2192 dryer'],
+              ['Filtrate','NaCl brine \u2192 ST-4 \u2192 RO']]});
+
+  /* ── BAY 4 · drying, milling, packing ──────────────────────────────── */
+  HotAirGen({tag:'HAG-01', x:M(5.5), z:ZP, bay:4, colour:'#ff5a3c', short:'hot air gen',
+        name:'Hot air generator', spec:[['Duty','Hot air supply to dryer'],
+              ['Outlet temp','200 \u2013 300 \u00b0C'],['Draft','Forced draft blower']]});
+
+  Dryer({tag:'DRYER', x:M(16.0), z:ZP, len:M(6.6), bay:4, colour:'#ff5a3c', short:'rotary 200-300\u00b0C',
+        name:'Rotary dryer', spec:[['Type','Direct fired rotary dryer'],
+              ['Operating temp','200 \u2013 300 \u00b0C'],
+              ['Feed','Zinc hydroxide filter cake from FP-03'],
+              ['Reaction','Zn(OH)\u2082 \u2192 ZnO + H\u2082O'],
+              ['Product','ZnO \u2248 500 kg/batch'],['Exhaust','\u2192 CYC-01']]});
+
+  Mill({tag:'MILL', x:M(26.5), z:ZP, bay:4, colour:'#c98b3a', short:'pulveriser',
+        name:'ZnO pulverising mill', spec:[['Duty','Size reduction of dried ZnO'],
+              ['Feed','Dry ZnO lumps from dryer'],['Product','ZnO powder to packing']]});
+
+  Packing({tag:'PKG', x:M(34.0), z:ZP, bay:4, colour:'#c98b3a', short:'bagging',
+        name:'Packing & weighing station', spec:[['Duty','Bagging of finished ZnO'],
+              ['Output','\u2248 500 kg ZnO per batch'],['Product','Zinc oxide powder']]});
+
+  /* ── BAY 4b · gas cleaning ─────────────────────────────────────────── */
+  Cyclone({tag:'CYC-01', x:M(21.0), z:ZG, bay:4, colour:'#ff5a3c', short:'cyclone',
+        name:'Cyclone separator', spec:[['Duty','Coarse ZnO recovery from dryer exhaust'],
+              ['Underflow','Recovered fines \u2192 mill'],['Overflow','\u2192 BF-01']]});
+
+  BagFilter({tag:'BF-01', x:M(27.0), z:ZG, bay:4, colour:'#ff5a3c', short:'bag filter',
+        name:'Bag filter / dust collector', spec:[['Duty','Fine ZnO dust arrest'],
+              ['Cleaning','Reverse pulse jet'],['Outlet','\u2192 ID fan \u2192 stack']]});
+
+  IDFan({tag:'ID-01', x:M(32.0), z:ZG, bay:4, colour:'#ff5a3c', short:'ID fan',
+        name:'Induced draft fan', spec:[['Duty','Draft for dryer gas train']]});
+
+  Stack({tag:'STK-01', x:M(36.0), z:ZG, bay:4, colour:'#ff5a3c', short:'stack',
+        name:'Exhaust stack', spec:[['Height','12 m above grade'],
+              ['Duty','Cleaned exhaust to atmosphere']]});
+
+  /* ── BAY 5 · effluent & water recovery ─────────────────────────────── */
+  Tank({tag:'ST-4', x:M(15.0), z:ZU, d:M(2.2), h:M(2.4), bay:5, col:0x6b5a18, cap:0x8a7420,
+        colour:'#f0c53a', short:'brine collection', name:'Spent brine collection tank',
+        spec:[['Contents','NaCl brine filtrate from FP-03'],['Next step','P-9 \u2192 RO-01']]});
+
+  Pump({tag:'P-9', x:M(17.6), z:ZU, bay:5, colour:'#f0c53a', short:'RO feed',
+        name:'RO feed pump', spec:PUMP_SPEC('ST-4 \u2192 RO-01')});
+
+  Cartridge({tag:'F-01', x:M(20.0), z:ZU, bay:5, colour:'#f0c53a', short:'brine pre-filter',
+        name:'Cartridge pre-filter', spec:[['Duty','Brine polishing ahead of the RO membranes'],
+              ['Position','P-9 discharge \u2192 RO-01 feed'],
+              ['Per flow sheet','pump \u2192 filter \u2192 RO']]});
+
+  ROSkid({tag:'RO-01', x:M(23.5), z:ZU, bay:5, colour:'#2fded0', short:'membrane skid',
+        name:'Reverse osmosis skid', spec:[['Duty','Brine recovery / water reuse'],
+              ['Permeate','Filtered water recycled to T-01'],
+              ['Reject','NaCl concentrate \u2192 ST-5']]});
+
+  Tank({tag:'ST-5', x:M(31.0), z:ZU, d:M(1.3), h:M(1.7), bay:5, col:0x4a4028, cap:0x635636,
+        colour:'#62727f', short:'NaCl 1.5 KL', name:'NaCl concentrate storage',
+        spec:[['Capacity','1.5 KL'],['Contents','RO reject \u2014 concentrated NaCl'],
+              ['Disposal','By-product / authorised disposal']]});
+}
+
+/** Pumps are identical on the flow sheet, so the data sheet is shared. */
+function PUMP_SPEC(duty){
+  return [['Duty',duty],['Type','Horizontal centrifugal, positive suction'],
+          ['Model','50 \u00d7 40 \u00d7 140'],['Capacity','10 m\u00b3/hr @ 15 m head'],
+          ['Speed','2900 rpm'],['Motor','3 HP'],['In / Out','50 \u00d7 40 mm'],
+          ['MOC','UHMWPE'],['Liquid','Acidic / alkaline, ambient']];
+}
+
+/**
+ * Field instruments called up on the flow sheet (pH indicators, temp sensor).
+ * Drawn as a wall-mounted transmitter plus the dip probe inside the vessel.
+ */
+function addInstrument(vt, tag, ang, hex){
+  const e=EQ[vt];
+  const x=e.x+Math.cos(ang)*(e.r+M(0.3)), z=e.z+Math.sin(ang)*(e.r+M(0.3));
+  const col=parseInt(hex.slice(1),16);
+  const tx=box(M(0.3),M(0.34),M(0.2),mat(col,.4,.45,col)); tx.material.emissiveIntensity=.5;
+  tx.position.set(x,e.base+e.h*0.80,z); scene.add(tx);
+  const rod=cyl(M(0.045),M(0.045),e.h*0.66,mat(0x8fa6bb,.4,.7),6);
+  rod.position.set(x,e.base+e.h*0.42,z); scene.add(rod);
+  const sp=tagSprite(tag,'',hex,0.62);
+  sp.userData.home={x,y:e.base+e.h*0.80+M(1.1),z};
+  sp.userData.plan={x,y:M(40),z:z+M(1.1)};
+  sp.position.set(sp.userData.home.x, sp.userData.home.y, sp.userData.home.z);
+  groups.labels.add(sp);
+}
+
+function buildInstruments(){
+  addInstrument('T-01','pHI-01', -Math.PI*0.25, '#4ad9a0');
+  addInstrument('T-01','TE-01',  -Math.PI*0.62, '#ff9a2b');
+  addInstrument('T-02','pHI-02', -Math.PI*0.25, '#4ad9a0');
+  addInstrument('T-04','pHI-03', -Math.PI*0.25, '#4ad9a0');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6 ── PIPING  —  LINE LIST
+   All runs are orthogonal and sit on the rack tier of their service.
+   Nozzle helpers keep each service on its own nozzle so lines never coincide.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const topNoz = (t,dx=0,dz=0)=>[EQ[t].x+dx, EQ[t].base+EQ[t].h+M(0.2), EQ[t].z+dz];
+const botNoz = t=>[EQ[t].x+EQ[t].r+M(0.3), PLINTH+M(0.35), EQ[t].z];
+const pumpIn = t=>[EQ[t].x-M(0.55), M(0.36), EQ[t].z];
+/** Vertical drop off the vessel outlet, then a level run into the pump suction. */
+const suction = (v,p)=>[ botNoz(v), [EQ[v].x+EQ[v].r+M(0.3), M(0.36), EQ[v].z], pumpIn(p) ];
+const pumpOut= t=>[EQ[t].x-M(0.28), M(0.62), EQ[t].z];
+const fpFeed = t=>[EQ[t].x-EQ[t].r-M(0.3), PLINTH+EQ[t].H*0.55, EQ[t].z];
+const fpOut  = t=>[EQ[t].x+EQ[t].r+M(0.2), PLINTH+M(0.3), EQ[t].z];
+const fpCake = t=>[EQ[t].x, PLINTH+M(0.3), EQ[t].z-EQ[t].D*1.1];
+
+function L(svc, pts, r, animate=true){        // register a line
+  const p = pipe(svc, pts, r||M(0.09));
+  if(animate) flow(svc, p);
+}
+
+function buildPiping(){
+
+  /* ── 01 · WATER — well header to all reactors + press wash ──────────── */
+  const WH = M(11.5);                                   // water header corridor
+  const wellOut=[EQ['WELL'].x+M(1.2), M(1.3), EQ['WELL'].z];
+  L('WATER', [wellOut,[EQ['WELL'].x+M(1.2),TIER.WATER,EQ['WELL'].z],
+              [EQ['WELL'].x+M(1.2),TIER.WATER,WH],[M(23.0),TIER.WATER,WH]], M(0.11));
+  [['T-01',-M(21.5)],['T-02',-M(6.5)],['T-04',M(18.5)]].forEach(([t,x])=>{
+    L('WATER', [[x-M(0.5),TIER.WATER,WH],[x-M(0.5),TIER.WATER,ZR-M(0.5)],
+                topNoz(t,-M(0.5),-M(0.5))], M(0.08), false);
+  });
+  L('WATER', [[M(3.5),TIER.WATER,WH],[M(3.5),TIER.WATER,M(15.0)-M(0.5)],
+              topNoz('T-03',0,-M(0.5))], M(0.08), false);
+  // cake wash water to FP-03 (2" NB wash inlet)
+  L('WATER', [[M(23.0),TIER.WATER,WH],[M(23.0),TIER.WATER,ZF],
+              [M(23.0),PLINTH+EQ['FP-03'].H*0.75,ZF],
+              [EQ['FP-03'].x+EQ['FP-03'].r+M(0.3),PLINTH+EQ['FP-03'].H*0.75,ZF]], M(0.08));
+
+  /* ── 02 · ACID — ST-1 to T-01 ───────────────────────────────────────── */
+  L('ACID', suction('ST-1','P-1'), M(0.08), false);
+  L('ACID', route(pumpIn('P-2'), [EQ['ST-1'].x+EQ['ST-1'].r+M(0.3),TIER.LOW,EQ['ST-1'].z],
+                  TIER.LOW,'zx'), M(0.07), false);
+  L('ACID', route(pumpOut('P-1'), topNoz('T-01',M(0.5),-M(0.5)), TIER.ACID,'xz'), M(0.08));
+
+  /* ── 03 · SLURRY — T-01 to FP-01 ────────────────────────────────────── */
+  L('SLURRY', suction('T-01','P-3'), M(0.09), false);
+  L('SLURRY', route(pumpOut('P-3'), fpFeed('FP-01'), TIER.SLURRY,'zx'), M(0.09));
+
+  /* ── 04 · black residue out of FP-01 (20 kg/batch) ──────────────────── */
+  L('WASTE', [fpCake('FP-01'), [EQ['FP-01'].x, PLINTH+M(0.3), ZF-M(4.5)]], M(0.10), false);
+
+  /* ── 05 · LIQUOR — FP-01 filtrate to ST-2, then ST-2 to T-02 ────────── */
+  L('LIQUOR', route(fpOut('FP-01'), topNoz('ST-2',0,-M(0.4)), TIER.LIQUOR,'zx'), M(0.09));
+  L('LIQUOR', suction('ST-2','P-4'), M(0.08), false);
+  L('LIQUOR', route(pumpOut('P-4'), topNoz('T-02',-M(0.5),M(0.5)), TIER.LIQUOR,'xz'), M(0.09));
+
+  /* ── 06 · ALKALI — T-03 to T-02 and to T-04 ─────────────────────────── */
+  L('ALKALI', suction('T-03','P-7'), M(0.08), false);
+  L('ALKALI', route(pumpOut('P-7'), topNoz('T-02',M(0.5),M(0.5)), TIER.ALKALI,'zx'), M(0.08));
+  L('ALKALI', route(pumpOut('P-7'), topNoz('T-04',M(0.6),M(0.6)), TIER.ALKALI,'xz'), M(0.08));
+
+  /* ── 07 · SLURRY — T-02 to FP-02 ────────────────────────────────────── */
+  L('SLURRY', suction('T-02','P-6'), M(0.09), false);
+  L('SLURRY', route(pumpOut('P-6'), fpFeed('FP-02'), TIER.SLURRY,'zx'), M(0.10));
+
+  /* ── 08 · impurity sludge out of FP-02 ──────────────────────────────── */
+  L('WASTE', [fpCake('FP-02'), [EQ['FP-02'].x, PLINTH+M(0.3), ZF-M(6.0)]], M(0.11), false);
+
+  /* ── 09 · LIQUOR — FP-02 filtrate to ST-3, then ST-3 to T-04 ────────── */
+  L('LIQUOR', route(fpOut('FP-02'), topNoz('ST-3',0,-M(0.4)), TIER.LIQUOR,'zx'), M(0.09));
+  L('LIQUOR', suction('ST-3','P-5'), M(0.08), false);
+  L('LIQUOR', route(pumpOut('P-5'), topNoz('T-04',-M(0.6),M(0.6)), TIER.LIQUOR,'xz'), M(0.09));
+
+  /* ── 10 · SLURRY — T-04 to FP-03 ────────────────────────────────────── */
+  L('SLURRY', suction('T-04','P-8'), M(0.10), false);
+  L('SLURRY', route(pumpOut('P-8'), fpFeed('FP-03'), TIER.SLURRY,'zx'), M(0.11));
+
+  /* ── 11 · SOLID — FP-03 cake to dryer, dryer to mill to packing ─────── */
+  const cakeOut=fpCake('FP-03');
+  L('SOLID', [cakeOut,[cakeOut[0],TIER.SOLID,cakeOut[2]],
+              [EQ['DRYER'].x-EQ['DRYER'].r-M(0.2),TIER.SOLID,cakeOut[2]],
+              [EQ['DRYER'].x-EQ['DRYER'].r-M(0.2),TIER.SOLID,ZP],
+              [EQ['DRYER'].x-EQ['DRYER'].r-M(0.2),M(2.9),ZP]], M(0.13));
+  L('SOLID', [[EQ['DRYER'].x+EQ['DRYER'].r+M(0.3),M(1.0),ZP],
+              [EQ['MILL'].x,M(1.0),ZP],[EQ['MILL'].x,M(2.7),ZP]], M(0.12));
+  L('SOLID', [[EQ['MILL'].x+M(0.9),M(1.6),ZP],[EQ['PKG'].x,M(1.6),ZP],
+              [EQ['PKG'].x,M(2.1),ZP]], M(0.11));
+
+  /* ── 12 · GAS — HAG to dryer, dryer to cyclone / BF / ID / stack ────── */
+  L('GAS', [[EQ['HAG-01'].x+M(1.5),M(1.4),ZP],[EQ['DRYER'].x-EQ['DRYER'].r-M(0.6),M(1.4),ZP],
+            [EQ['DRYER'].x-EQ['DRYER'].r-M(0.6),M(1.5),ZP]], M(0.13));
+  L('GAS', [[EQ['DRYER'].x+EQ['DRYER'].r,M(2.2),ZP],
+            [EQ['DRYER'].x+EQ['DRYER'].r,TIER.GAS,ZP],
+            [EQ['CYC-01'].x,TIER.GAS,ZP],[EQ['CYC-01'].x,TIER.GAS,ZG],
+            [EQ['CYC-01'].x,M(3.3),ZG]], M(0.13));
+  L('GAS', [[EQ['CYC-01'].x,M(4.1),ZG],[EQ['BF-01'].x,M(4.1),ZG],
+            [EQ['BF-01'].x,M(3.4),ZG]], M(0.12));
+  L('GAS', [[EQ['BF-01'].x+M(0.8),M(3.9),ZG],[EQ['ID-01'].x,M(3.9),ZG],
+            [EQ['ID-01'].x,M(1.3),ZG]], M(0.12));
+  L('GAS', [[EQ['ID-01'].x+M(0.8),M(1.0),ZG],[EQ['STK-01'].x,M(1.0),ZG],
+            [EQ['STK-01'].x,M(2.0),ZG]], M(0.12));
+  // recovered fines from cyclone back to mill
+  L('SOLID', [[EQ['CYC-01'].x,M(0.5),ZG],[EQ['CYC-01'].x,M(0.5),ZG+M(3.0)],
+              [EQ['MILL'].x,M(0.5),ZG+M(3.0)],[EQ['MILL'].x,M(0.5),ZP-M(1.6)]], M(0.08));
+
+  /* ── 13 · BRINE — FP-03 filtrate to ST-4, ST-4 to RO ────────────────── */
+  L('BRINE', route(fpOut('FP-03'), topNoz('ST-4',0,-M(0.4)), TIER.BRINE,'zx'), M(0.10));
+  L('BRINE', suction('ST-4','P-9'), M(0.08), false);
+  L('BRINE', [pumpOut('P-9'),[EQ['P-9'].x-M(0.28),M(0.5),EQ['P-9'].z],
+              [EQ['F-01'].x-M(0.5),M(0.5),EQ['F-01'].z]], M(0.08));
+  L('BRINE', [[EQ['F-01'].x+M(0.5),M(1.4),EQ['F-01'].z],
+              [EQ['RO-01'].x-M(1.4),M(1.4),EQ['RO-01'].z]], M(0.08));
+
+  /* ── 14 · RO reject to ST-5, RO permeate back to T-01 (reuse) ───────── */
+  L('WASTE', [[EQ['RO-01'].x+M(1.5),M(1.1),EQ['RO-01'].z],
+              [EQ['ST-5'].x,M(1.1),EQ['ST-5'].z],
+              topNoz('ST-5',0,0)], M(0.08));
+  L('PERM', [[EQ['RO-01'].x,M(2.2),EQ['RO-01'].z],
+             [EQ['RO-01'].x,TIER.PERM,EQ['RO-01'].z],
+             [EQ['RO-01'].x,TIER.PERM,M(21.0)],
+             [-M(21.5)+M(0.5),TIER.PERM,M(21.0)],
+             [-M(21.5)+M(0.5),TIER.PERM,ZR+M(0.5)],
+             topNoz('T-01',M(0.5),M(0.5))], M(0.10));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   7 ── PLOT — grid, bay zones, boundary, north arrow
+   ═══════════════════════════════════════════════════════════════════════════ */
+const BAYS=[
+  {id:1,n:'BAY 1  ACID LEACHING',      x0:-M(34.5),x1:-M(11.0),z0:-M(11.5),z1:M(9.5), c:0x123243},
+  {id:2,n:'BAY 2  PURIFICATION',       x0:-M(10.5),x1: M(5.5), z0:-M(11.5),z1:M(9.5), c:0x123243},
+  {id:3,n:'BAY 3  PRECIPITATION',      x0: M(6.0), x1: M(23.5),z0:-M(12.0),z1:M(9.5), c:0x123243},
+  {id:3,n:'ALKALI PREPARATION',        x0:-M(2.5), x1: M(8.5), z0: M(12.0),z1:M(18.0),c:0x1c1638},
+  {id:4,n:'BAY 4  DRYING / MILLING / PACKING', x0:M(2.0),x1:M(38.0),z0:-M(25.0),z1:-M(18.0),c:0x2a1512},
+  {id:4,n:'GAS CLEANING',              x0: M(18.0),x1: M(38.0),z0:-M(32.5),z1:-M(27.5),c:0x2a1512},
+  {id:5,n:'BAY 5  WATER SUPPLY & RECOVERY', x0:-M(33.0),x1:M(34.0),z0:M(16.0),z1:M(21.0),c:0x0e2a36}
+];
+
+function buildPlot(){
+  // ── graded floor slab
+  const floor=new THREE.Mesh(new THREE.PlaneGeometry(M(90),M(70)),
+    new THREE.MeshStandardMaterial({color:0x0d1319,roughness:.98,metalness:0}));
+  floor.rotation.x=-Math.PI/2; floor.position.y=-0.6; floor.receiveShadow=true; scene.add(floor);
+
+  // ── bay zone pads
+  BAYS.forEach(b=>{
+    const w=b.x1-b.x0, d=b.z1-b.z0;
+    const pad=new THREE.Mesh(new THREE.PlaneGeometry(w,d),
+      new THREE.MeshBasicMaterial({color:b.c,transparent:true,opacity:.5}));
+    pad.rotation.x=-Math.PI/2; pad.position.set(b.x0+w/2,0.1,b.z0+d/2); groups.zones.add(pad);
+    const edge=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(w,d)),
+      new THREE.LineBasicMaterial({color:0x1f4a63}));
+    edge.rotation.x=-Math.PI/2; edge.position.set(b.x0+w/2,0.3,b.z0+d/2); groups.zones.add(edge);
+    groups.zones.add(groundText(b.n, b.x0+w/2, b.z0+M(1.4), Math.min(w,M(34)), '#2c6a90', 40,'center'));
+  });
+
+  // ── 5 m grid + column / row references
+  const gm=new THREE.LineBasicMaterial({color:0x152029});
+  const gpts=[];
+  for(let x=PLOT.x0;x<=PLOT.x1;x+=M(5)) gpts.push(x,0.05,PLOT.z0, x,0.05,PLOT.z1);
+  for(let z=PLOT.z0;z<=PLOT.z1;z+=M(5)) gpts.push(PLOT.x0,0.05,z, PLOT.x1,0.05,z);
+  const gg=new THREE.BufferGeometry();
+  gg.setAttribute('position',new THREE.Float32BufferAttribute(gpts,3));
+  groups.grid.add(new THREE.LineSegments(gg,gm));
+
+  const cols='ABCDEFGHJKLMNPQR';
+  let i=0;
+  for(let x=PLOT.x0;x<=PLOT.x1-1;x+=M(5)){
+    groups.grid.add(groundText(cols[i++], x+M(2.5), PLOT.z1-M(1.2), M(4),'#1f3f55',56,'center'));
+  }
+  let j=1;
+  for(let z=PLOT.z1;z>=PLOT.z0+1;z-=M(5)){
+    groups.grid.add(groundText(String(j++), PLOT.x0+M(1.2), z-M(2.5), M(4),'#1f3f55',56,'center'));
+  }
+
+  // ── plot boundary + dimensions
+  const bpts=[[PLOT.x0,PLOT.z0],[PLOT.x1,PLOT.z0],[PLOT.x1,PLOT.z1],[PLOT.x0,PLOT.z1],[PLOT.x0,PLOT.z0]];
+  const bg=new THREE.BufferGeometry();
+  const arr=[]; for(let k=0;k<bpts.length-1;k++)
+    arr.push(bpts[k][0],0.4,bpts[k][1], bpts[k+1][0],0.4,bpts[k+1][1]);
+  bg.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));
+  groups.grid.add(new THREE.LineSegments(bg,new THREE.LineBasicMaterial({color:0x27506b})));
+  groups.grid.add(groundText('PLOT BOUNDARY  77.0 m (E-W)', 0, PLOT.z0+M(1.6), M(30),'#20455c',38,'center'));
+  groups.grid.add(groundText('57.0 m (N-S)', PLOT.x1-M(5.0), 0, M(14),'#20455c',38,'center'));
+
+  // ── central rack corridor marking + main road
+  groups.grid.add(groundText('- - - - -  CENTRAL PIPE RACK CORRIDOR  - - - - -',
+                             -M(4), -M(0.5), M(40),'#1c4a3c',34,'center'));
+  const road=new THREE.Mesh(new THREE.PlaneGeometry(M(72),M(3.2)),
+    new THREE.MeshBasicMaterial({color:0x111a22}));
+  road.rotation.x=-Math.PI/2; road.position.set(M(1),0.08,-M(15.5)); groups.grid.add(road);
+  groups.grid.add(groundText('ACCESS ROAD  3.2 m', -M(24), -M(15.5), M(18),'#243a48',34,'left'));
+
+  // ── pipe-rack steel columns along the corridor
+  for(let x=-M(30);x<=M(24);x+=M(6)){
+    const c=box(M(0.22),TIER.PERM,M(0.22),mat(0x1e2b36,.85,.4));
+    c.position.set(x,TIER.PERM/2,-M(0.5)); scene.add(c);
+  }
+  for(let x=-M(30);x<=M(24);x+=M(6)){
+    const bm=box(M(0.18),M(0.18),M(2.2),mat(0x1e2b36,.85,.4));
+    bm.position.set(x,TIER.WATER+M(0.4),-M(0.5)); scene.add(bm);
+  }
+}
+
+function buildNorthArrow(){
+  const svg=document.getElementById('north');
+  svg.innerHTML=`<circle cx="29" cy="29" r="26" fill="#0b1219cc" stroke="#1c2833"/>
+   <g id="n-rot"><polygon points="29,6 35,31 29,26 23,31" fill="#5cc2ff"/>
+   <polygon points="29,52 23,27 29,32 35,27" fill="#28394a"/></g>
+   <text x="29" y="16" fill="#5cc2ff" font-size="9" font-family="Consolas" text-anchor="middle">N</text>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   8 ── VIEW — lighting, cameras, interaction
+   ═══════════════════════════════════════════════════════════════════════════ */
+let keyLight=null;
+function buildLights(){
+  scene.add(new THREE.AmbientLight(0x9fc4e8, 0.42));
+  scene.add(new THREE.HemisphereLight(0x86b6e0, 0x0c1218, 0.55));
+  const key=new THREE.DirectionalLight(0xfff0dc,0.95);
+  key.position.set(M(30),M(45),M(28)); key.castShadow=shadowsOn;
+  key.shadow.mapSize.set(LOWPOWER?1024:2048, LOWPOWER?1024:2048);
+  keyLight=key;
+  const s=M(50);
+  key.shadow.camera.left=-s; key.shadow.camera.right=s;
+  key.shadow.camera.top=s;   key.shadow.camera.bottom=-s;
+  key.shadow.camera.far=M(140);
+  scene.add(key);
+  const fill=new THREE.DirectionalLight(0x5f9bd5,0.4); fill.position.set(-M(35),M(22),-M(30)); scene.add(fill);
+}
+
+function updateCamera(){
+  const W=W3D(), H=H3D();
+  if(mode==='3d'){
+    const {theta,phi,r,tx,ty,tz}=camState;
+    camera.aspect=W/H; camera.updateProjectionMatrix();
+    camera.position.set(tx+r*Math.cos(phi)*Math.sin(theta), ty+r*Math.sin(phi), tz+r*Math.cos(phi)*Math.cos(theta));
+    camera.lookAt(tx,ty,tz);
+    document.getElementById('s-zoom').textContent='ZOOM: '+Math.round(M(96)/r*100)+'%';
+  } else {
+    const z=topState.zoom, hw=W/2/z, hh=H/2/z;
+    topCamera.left=-hw; topCamera.right=hw;
+    topCamera.top = hh; topCamera.bottom=-hh;
+    topCamera.position.set(topState.cx, M(60), topState.cy);
+    topCamera.lookAt(topState.cx, 0, topState.cy);
+    topCamera.updateProjectionMatrix();
+    document.getElementById('s-zoom').textContent='ZOOM: '+Math.round(z*100)+'%';
+  }
+  invalidate();
+  const rot=document.getElementById('n-rot');
+  if(rot) rot.setAttribute('transform', mode==='3d'
+    ? `rotate(${(-camState.theta*180/Math.PI).toFixed(1)} 29 29)` : 'rotate(0 29 29)');
+}
+
+function resetCam(){
+  if(mode==='3d') camState={theta:-0.62,phi:0.40,r:M(96),tx:0,ty:0,tz:-M(3)};
+  else            topState={cx:M(1),cy:-M(5),zoom:Math.min(W3D()/M(84), H3D()/M(62))};
+  updateCamera();
+}
+
+function zoomBy(f){
+  if(mode==='3d') camState.r=Math.max(M(12),Math.min(camState.r/f,M(260)));
+  else            topState.zoom=Math.max(0.15,Math.min(topState.zoom*f,6));
+  updateCamera();
+}
+
+const BAY_VIEW={
+  1:{x:-M(21),z:-M(1),r:M(42),zoom:2.0},
+  2:{x:-M(4), z:-M(1),r:M(40),zoom:2.1},
+  3:{x: M(13),z: M(2),r:M(48),zoom:1.7},
+  4:{x: M(21),z:-M(25),r:M(52),zoom:1.6},
+  5:{x: M(16),z: M(18),r:M(44),zoom:1.9}
+};
+function focusBay(n){
+  document.querySelectorAll('[id^="z-"]').forEach(b=>b.classList.remove('on'));
+  document.getElementById(n===0?'z-all':'z-'+n).classList.add('on');
+  if(n===0){ resetCam(); showSpec(null); return; }
+  const v=BAY_VIEW[n];
+  if(mode==='3d'){ camState.tx=v.x; camState.tz=v.z; camState.ty=M(2); camState.r=v.r; }
+  else { topState.cx=v.x; topState.cy=v.z; topState.zoom=v.zoom; }
+  updateCamera();
+}
+
+function focusEq(tag){
+  const d=EQ[tag]; if(!d) return;
+  if(mode==='3d'){ camState.tx=d.x; camState.tz=d.z; camState.ty=M(1.5); camState.r=M(20); }
+  else { topState.cx=d.x; topState.cy=d.z; topState.zoom=4; }
+  updateCamera();
+}
+
+function setMode(m){
+  mode=m;
+  document.getElementById('b3d').classList.toggle('on',m==='3d');
+  document.getElementById('btop').classList.toggle('on',m==='top');
+  document.getElementById('mode-label').textContent =
+    m==='3d' ? '3D EQUIPMENT MODEL' : 'TOP VIEW  \u2014  PLOT PLAN  (NORTH UP)';
+  document.getElementById('mode-sub').textContent =
+    m==='3d' ? 'drag = orbit  |  wheel = zoom  |  right-drag = pan  |  click item = spec'
+             : 'drag = pan  |  wheel = zoom  |  grid 5.0 m  |  click item = spec';
+  document.getElementById('s-mode').textContent='MODE: '+(m==='3d'?'3D':'PLAN');
+  groups.labels.children.forEach(sp=>{
+    const t = (m==='3d') ? sp.userData.home : sp.userData.plan;
+    if(t) sp.position.set(t.x,t.y,t.z);
+  });
+  resetCam();
+}
+
+/* ── pointer interaction ───────────────────────────────────────────────── */
+const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
+let dragging=false, panning=false, last={x:0,y:0}, hovered=null;
+const cv=document.getElementById('c3d'), tip=document.getElementById('tip');
+
+function pick(ex,ey){
+  const rect=cv.getBoundingClientRect();
+  ptr.x=((ex-rect.left)/rect.width)*2-1;
+  ptr.y=-((ey-rect.top)/rect.height)*2+1;
+  ray.setFromCamera(ptr, mode==='3d'?camera:topCamera);
+  const meshes=[]; pickables.forEach(g=>g.traverse(o=>{if(o.isMesh) meshes.push(o);}));
+  const hits=ray.intersectObjects(meshes,false);
+  if(!hits.length) return null;
+  let o=hits[0].object; while(o && !o.userData.tag) o=o.parent;
+  return o;
+}
+
+function highlight(g,on){
+  invalidate();
+  g.traverse(m=>{ if(m.isMesh&&m.material&&m.material.emissive){
+    if(on){ m.userData._e=m.material.emissive.getHex(); m.material.emissive.setHex(0x1b4a7a); m.material.emissiveIntensity=.85; }
+    else if(m.userData._e!==undefined){ m.material.emissive.setHex(m.userData._e); m.material.emissiveIntensity=.35; }
+  }});
+}
+
+cv.addEventListener('pointerdown',e=>{
+  if(e.button===2||e.shiftKey) panning=true; else dragging=true;
+  last={x:e.clientX,y:e.clientY}; cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener('pointerup',e=>{
+  if(dragging && Math.abs(e.clientX-last.x)<3 && Math.abs(e.clientY-last.y)<3){
+    const o=pick(e.clientX,e.clientY);
+    if(o){ showSpec(o.userData.tag); focusEq(o.userData.tag); }
+  }
+  dragging=panning=false;
+});
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+cv.addEventListener('pointermove',e=>{
+  const dx=e.clientX-last.x, dy=e.clientY-last.y;
+  if(dragging||panning){
+    if(mode==='3d'){
+      if(panning){ camState.tx-=dx*camState.r/2600; camState.tz-=dy*camState.r/2600; }
+      else{ camState.theta-=dx*0.006; camState.phi=Math.max(0.05,Math.min(1.45,camState.phi+dy*0.005)); }
+    } else { topState.cx-=dx/topState.zoom; topState.cy-=dy/topState.zoom; }
+    last={x:e.clientX,y:e.clientY}; updateCamera();
+  } else {
+    const o=pick(e.clientX,e.clientY);
+    if(o!==hovered){ if(hovered) highlight(hovered,false); hovered=o; if(hovered) highlight(hovered,true); }
+    const rect=cv.getBoundingClientRect();
+    if(o){
+      const d=o.userData;
+      tip.style.display='block';
+      tip.innerHTML=`<b>${d.tag}</b><br>${d.name||''}`;
+      tip.style.left=Math.min(e.clientX-rect.left+16, rect.width-225)+'px';
+      tip.style.top=Math.max(4,e.clientY-rect.top-8)+'px';
+      cv.style.cursor='pointer';
+    } else { tip.style.display='none'; cv.style.cursor='default'; }
+    // grid read-out in metres, origin = plot centre
+    const gp=groundPoint(e.clientX,e.clientY);
+    if(gp) document.getElementById('coords').textContent=
+      `E ${(gp.x/10).toFixed(1)} m \u00a0 N ${(-gp.z/10).toFixed(1)} m`;
+  }
+});
+cv.addEventListener('wheel',e=>{e.preventDefault(); zoomBy(e.deltaY<0?1.12:0.89);},{passive:false});
+
+/* two-finger pinch — without this, zooming on a touch screen is impossible */
+let pinch=null;
+const gap=t=>Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY);
+cv.addEventListener('touchstart',e=>{
+  if(e.touches.length===2){ pinch=gap(e.touches); dragging=panning=false; }
+},{passive:true});
+cv.addEventListener('touchmove',e=>{
+  if(e.touches.length===2 && pinch){
+    e.preventDefault();
+    const d=gap(e.touches);
+    if(Math.abs(d-pinch)>1.5){ zoomBy(d/pinch); pinch=d; }
+  }
+},{passive:false});
+cv.addEventListener('touchend',()=>{ pinch=null; },{passive:true});
+
+function groundPoint(ex,ey){
+  const rect=cv.getBoundingClientRect();
+  ptr.x=((ex-rect.left)/rect.width)*2-1; ptr.y=-((ey-rect.top)/rect.height)*2+1;
+  ray.setFromCamera(ptr, mode==='3d'?camera:topCamera);
+  const plane=new THREE.Plane(new THREE.Vector3(0,1,0),0), out=new THREE.Vector3();
+  return ray.ray.intersectPlane(plane,out)?out:null;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   9 ── UI
+   ═══════════════════════════════════════════════════════════════════════════ */
+function buildLegend(){
+  const lg=document.getElementById('legend');
+  Object.keys(SVC).forEach(k=>{
+    const row=document.createElement('div'); row.className='lr'; row.dataset.svc=k;
+    row.innerHTML=`<div class="ld" style="background:#${SVC[k].c.toString(16).padStart(6,'0')}"></div>
+                   <div class="lt">${SVC[k].n}</div>`;
+    row.onclick=()=>{ const on=svcGroups[k].visible=!svcGroups[k].visible;
+                      row.classList.toggle('off',!on); invalidate(); };
+    lg.appendChild(row);
+  });
+}
+
+/* ── LINE SCHEDULE ────────────────────────────────────────────────────────
+   Sizes are quoted only where the flow sheet or an equipment data sheet
+   actually states them; "\u2014" means the sheet does not call one up.      */
+const LINES=[
+ ['L-01','WATER', 'Raw water',        'WELL',            'T-01 / 02 / 03 / 04 header', '\u2014'],
+ ['L-02','WATER', 'Wash water',       'water header',    'FP-03 wash inlet',           '2" NB'],
+ ['L-03','ACID',  'Acid water',       'ST-1',            'P-1 / P-2 suction',          '2" (50 mm)'],
+ ['L-04','ACID',  'Acid water',       'P-1 discharge',   'T-01',                       '1.5" (40 mm)'],
+ ['L-05','SLURRY','Reaction slurry',  'T-01',            'P-3 suction',                '2" (50 mm)'],
+ ['L-06','SLURRY','Reaction slurry',  'P-3 discharge',   'FP-01 feed',                 '1.5" (40 mm)'],
+ ['L-07','WASTE', 'Black residue',    'FP-01 cake',      'residue bin \u2014 20 kg/batch','solids'],
+ ['L-08','LIQUOR','Filtered ZnCl\u2082','FP-01 filtrate',  'ST-2 (2 KL)',              'open delivery'],
+ ['L-09','LIQUOR','ZnCl\u2082',        'ST-2 / P-4',      'T-02',                       '2" / 1.5"'],
+ ['L-10','ALKALI','Alkali solution',  'T-03 / P-7',      'T-02',                       '1.5" (40 mm)'],
+ ['L-11','ALKALI','Alkali solution',  'T-03 / P-7',      'T-04',                       '1.5" (40 mm)'],
+ ['L-12','SLURRY','Reaction slurry',  'T-02 / P-6',      'FP-02 feed',                 '3" NB'],
+ ['L-13','WASTE', 'ZnCl\u2082 sludge', 'FP-02 cake',      'sludge bin',                 'solids'],
+ ['L-14','LIQUOR','ZnCl\u2082',        'FP-02 filtrate',  'ST-3',                       '2" NB'],
+ ['L-15','LIQUOR','ZnCl\u2082',        'ST-3 / P-5',      'T-04',                       '2" / 1.5"'],
+ ['L-16','SLURRY','Precipitate soln', 'T-04 / P-8',      'FP-03 feed',                  '3" NB'],
+ ['L-17','WATER', 'Compressed air',   'plant air',       'FP-03 air inlet \u2014 nozzle only','2" NB'],
+ ['L-18','SOLID', 'Filter cake',      'FP-03',           'dryer feed hopper',           'solids'],
+ ['L-19','BRINE', 'Filtrate / brine', 'FP-03',           'ST-4',                        '2" NB \u00d7 2'],
+ ['L-20','BRINE', 'Brine',            'ST-4 / P-9',      'F-01 cartridge filter',       '2" / 1.5"'],
+ ['L-21','BRINE', 'Filtered brine',   'F-01',            'RO-01',                       '1.5"'],
+ ['L-22','PERM',  'Permeate',         'RO-01',           'T-01 \u2014 filtered water reuse','\u2014'],
+ ['L-23','WASTE', 'RO reject',        'RO-01',           'ST-5 \u2014 NaCl conc. 1.5 KL',  '\u2014'],
+ ['L-24','GAS',   'Hot air',          'HAG-01',          'dryer inlet',                 'duct'],
+ ['L-25','GAS',   'Dryer exhaust',    'DRYER',           'CYC-01 \u2192 BF-01 \u2192 ID-01 \u2192 STK-01','duct'],
+ ['L-26','SOLID', 'ZnO product',      'DRYER',           'MILL \u2192 PACKAGING (500 kg)',  'solids'],
+ ['L-27','SOLID', 'Recovered fines',  'CYC-01',          'MILL',                        'solids']
+];
+
+let linesOpen=false;
+function showLines(){
+  const panel=document.getElementById('lines');
+  linesOpen=!linesOpen;
+  panel.classList.toggle('open',linesOpen);
+  document.getElementById('b-line').classList.toggle('on',linesOpen);
+  if(!linesOpen) return;
+  const rows=LINES.map(([no,svc,serv,from,to,size])=>{
+    const c='#'+SVC[svc].c.toString(16).padStart(6,'0');
+    return `<tr><td class="no">${no}</td>
+      <td><span class="swatch" style="background:${c}"></span>${serv}</td>
+      <td>${from}</td><td>${to}</td><td>${size}</td></tr>`;
+  }).join('');
+  document.getElementById('ln-b').innerHTML =
+    `<table class="ls"><thead><tr><th>No.</th><th>Service</th><th>From</th><th>To</th>
+     <th>Size</th></tr></thead><tbody>${rows}</tbody></table>
+     <div id="ln-note">Sizes called up on the flow sheet: 1.5" &nbsp; 1.57" &nbsp; 2" &nbsp;
+     2.5" &nbsp; 2.95" &nbsp; 3". Filter-press nozzles are from the FP-01 / 02 / 03 data sheets
+     (FP-03: feed 3" NB &times;1, air 2" NB &times;1, wash 2" NB &times;1, filtrate 2" NB &times;2).
+     All pump connections are 50 &times; 40 mm, so suction reads 2" and discharge 1.5"/1.57".</div>`;
+}
+
+const OVERVIEW=[['Route','Zinc ash \u2192 HCl leach \u2192 filter \u2192 purify \u2192 precipitate \u2192 filter \u2192 dry \u2192 mill \u2192 pack'],
+  ['Product','ZnO \u2248 500 kg per batch'],['By-products','Black residue \u2248 20 kg, ZnCl\u2082 sludge, NaCl conc. 1.5 KL'],
+  ['Water','Well water make-up; RO permeate recycled to T-01'],
+  ['Reactors','T-01 12 KL | T-02 10 KL | T-03 10 KL | T-04 20 KL'],
+  ['Presses','FP-01 1.50 m\u00b2 | FP-02 52.80 m\u00b2 | FP-03 71.28 m\u00b2'],
+  ['Pumps','P-1 \u2026 P-9, 10 m\u00b3/hr @ 15 m, 3 HP, UHMWPE']];
+
+function showSpec(tag){
+  const t=document.getElementById('sp-tag'), n=document.getElementById('sp-name'), b=document.getElementById('sp-body');
+  if(!tag){
+    t.textContent='PLANT OVERVIEW'; n.textContent='ZnO recovery from zinc ash';
+    b.innerHTML=OVERVIEW.map(([k,v])=>`<div class="sp-row"><div class="sp-k">${k}</div><div class="sp-v">${v}</div></div>`).join('');
+    return;
+  }
+  const d=EQ[tag];
+  t.textContent=d.tag; n.textContent=d.name||'';
+  b.innerHTML=(d.spec||[]).map(([k,v])=>
+    `<div class="sp-row"><div class="sp-k">${k}</div><div class="sp-v">${v}</div></div>`).join('');
+}
+
+/* Tag plates cycle small -> large -> off, so they never sit on top of the
+   pipe runs you are trying to read. */
+const LAB_SIZE=[0, 1.0, 1.5], LAB_TXT=['TAGS: OFF','TAGS: S','TAGS: L'];
+function toggleLabels(){
+  labelMode=(labelMode+1)%3;
+  groups.labels.visible = labelMode>0;
+  const f=LAB_SIZE[labelMode];
+  groups.labels.children.forEach(sp=>{
+    const b=sp.userData.base; if(b) sp.scale.set(b[0]*f, b[1]*f, 1);
+  });
+  const btn=document.getElementById('b-lab');
+  btn.textContent=LAB_TXT[labelMode]; btn.classList.toggle('on',labelMode>0);
+  invalidate();
+}
+function toggleGrid(){ gridOn=!gridOn; groups.grid.visible=gridOn; groups.zones.visible=gridOn;
+  document.getElementById('b-grid').classList.toggle('on',gridOn); invalidate(); }
+function toggleFlow(){ flowOn=!flowOn;
+  document.getElementById('b-flow').classList.toggle('on',flowOn);
+  flowSets.forEach(f=>f.obj.visible=flowOn); invalidate(); }
+function toggleShadows(){
+  shadowsOn=!shadowsOn;
+  renderer.shadowMap.enabled=shadowsOn;
+  if(keyLight) keyLight.castShadow=shadowsOn;
+  scene.traverse(o=>{ if(o.isMesh&&o.material) o.material.needsUpdate=true; });
+  document.getElementById('b-sh').classList.toggle('on',shadowsOn);
+  invalidate();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BOOT
+   ═══════════════════════════════════════════════════════════════════════════ */
+buildLights();
+buildPlot();
+buildPlant();
+buildPiping();
+buildInstruments();
+bakePipes();          // weld pipe runs -> one mesh per service
+bakeFlow();           // one Points cloud per service
+buildLegend();
+buildNorthArrow();
+showSpec(null);
+labelMode=0; toggleLabels();          // start on the small tag plates
+document.getElementById('b-sh').classList.toggle('on',shadowsOn);
+document.getElementById('s-count').textContent =
+  'ITEMS: '+Object.keys(EQ).length+'  |  SCALE 1u = 0.1 m'+(LOWPOWER?'  |  LITE':'');
+
+function resize(){
+  renderer.setSize(W3D(),H3D(),false);
+  updateCamera(); invalidate();
+}
+window.addEventListener('resize',resize);
+resize(); resetCam();
+
+/* The scene is static unless the user moves it, so redraw only when something
+   actually changed. Idle cost drops to zero, which is what makes it feel
+   smooth on a phone. */
+(function loop(){
+  requestAnimationFrame(loop);
+  if(flowOn){ animT+=0.0022; stepFlow(); dirty=true; }
+  if(!dirty) return;
+  dirty=false;
+  renderer.render(scene, mode==='3d'?camera:topCamera);
+})();
+</script>
